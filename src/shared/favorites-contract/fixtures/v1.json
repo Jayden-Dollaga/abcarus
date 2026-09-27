@@ -1,0 +1,234 @@
+{
+  "schema": "abcarus.favorites.fixtures.v1",
+  "contractVersion": "abcarus.favorites.v1",
+  "itemCatalog": {
+    "a": {
+      "id": "item-a",
+      "tune": {
+        "title": "Alpha",
+        "composer": "Composer A",
+        "key": "C",
+        "rhythm": "",
+        "origin": "",
+        "groups": [],
+        "source": { "locatorHint": "library::alpha", "pathHint": "old/alpha.abc", "xNumberHint": "1" },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "performance": { "transposeSemitones": 0, "tempoScale": 1 },
+      "notes": "",
+      "links": [],
+      "export": { "includeInPdf": true, "pageBreakBefore": false }
+    },
+    "aMoved": {
+      "id": "item-a-moved",
+      "tune": {
+        "title": "Alpha",
+        "composer": "Composer A",
+        "key": "C",
+        "rhythm": "",
+        "origin": "",
+        "groups": [],
+        "source": { "locatorHint": "library::alpha-moved", "pathHint": "new/alpha.abc", "xNumberHint": "42" },
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "performance": { "transposeSemitones": 0, "tempoScale": 1 },
+      "notes": "",
+      "links": [],
+      "export": { "includeInPdf": true, "pageBreakBefore": false }
+    },
+    "aRevised": {
+      "id": "item-a-revised",
+      "tune": {
+        "title": "Alpha revised",
+        "composer": "Composer A",
+        "key": "Dm",
+        "rhythm": "",
+        "origin": "",
+        "groups": [],
+        "source": { "locatorHint": "library::alpha", "pathHint": "old/alpha.abc", "xNumberHint": "1" },
+        "contentHash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "performance": { "transposeSemitones": 0, "tempoScale": 1 },
+      "notes": "",
+      "links": [],
+      "export": { "includeInPdf": true, "pageBreakBefore": false }
+    },
+    "b": {
+      "id": "item-b",
+      "tune": {
+        "title": "Beta",
+        "composer": "Composer B",
+        "key": "G",
+        "rhythm": "",
+        "origin": "",
+        "groups": [],
+        "source": { "locatorHint": "library::beta", "pathHint": "beta.abc", "xNumberHint": "2" },
+        "contentHash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "performance": { "transposeSemitones": 0, "tempoScale": 1 },
+      "notes": "",
+      "links": [],
+      "export": { "includeInPdf": true, "pageBreakBefore": false }
+    },
+    "missing": {
+      "id": "item-missing",
+      "tune": {
+        "title": "Saved offline tune",
+        "composer": "",
+        "key": "F",
+        "rhythm": "",
+        "origin": "",
+        "groups": [],
+        "source": { "locatorHint": "", "pathHint": "", "xNumberHint": "" },
+        "contentHash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "embeddedAbc": "X:1\nT:Saved offline tune\nK:F\nF|\n",
+      "performance": { "transposeSemitones": 0, "tempoScale": 1 },
+      "notes": "",
+      "links": [],
+      "export": { "includeInPdf": true, "pageBreakBefore": false }
+    }
+  },
+  "tuneKeyCases": [
+    {
+      "id": "sha256-precedes-locator",
+      "tune": {
+        "contentHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source": { "locatorHint": "Library::One", "pathHint": "one.abc", "xNumberHint": "1" }
+      },
+      "expected": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "locator-fallback-normalizes-unicode-and-space",
+      "tune": {
+        "contentHash": "",
+        "source": { "locatorHint": "  Ａ   B  ", "pathHint": "one.abc", "xNumberHint": "1" }
+      },
+      "expected": "locator:a b"
+    },
+    {
+      "id": "metadata-fallback-uses-basename",
+      "tune": {
+        "title": " My   Tune ",
+        "composer": "COMPOSER",
+        "contentHash": "",
+        "source": { "locatorHint": "", "pathHint": "C:\\Music\\Session.ABC", "xNumberHint": "7" }
+      },
+      "expected": "tune:session.abc|7|my tune|composer"
+    }
+  ],
+  "mergeCases": [
+    {
+      "id": "independent-additions",
+      "left": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": ["a"],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T12:00:00.000Z" }]
+      },
+      "right": {
+        "updatedAt": "2026-09-01T11:00:00.000Z",
+        "itemIds": ["b"],
+        "memberships": [{ "itemId": "item-b", "tuneKey": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "present": true, "changedAt": "2026-09-01T11:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": ["item-a", "item-b"], "states": { "item-a": true, "item-b": true } }
+    },
+    {
+      "id": "newer-removal",
+      "left": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": ["a"],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T12:00:00.000Z" }]
+      },
+      "right": {
+        "updatedAt": "2026-09-01T13:00:00.000Z",
+        "itemIds": [],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": false, "changedAt": "2026-09-01T13:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": [], "states": { "item-a": false } }
+    },
+    {
+      "id": "newer-re-add",
+      "left": {
+        "updatedAt": "2026-09-01T13:00:00.000Z",
+        "itemIds": [],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": false, "changedAt": "2026-09-01T13:00:00.000Z" }]
+      },
+      "right": {
+        "updatedAt": "2026-09-01T14:00:00.000Z",
+        "itemIds": ["a"],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T14:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": ["item-a"], "states": { "item-a": true } }
+    },
+    {
+      "id": "duplicate-add-collapses-by-tune-key",
+      "left": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": ["a"],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T12:00:00.000Z" }]
+      },
+      "right": {
+        "updatedAt": "2026-09-01T13:00:00.000Z",
+        "itemIds": ["aMoved"],
+        "memberships": [{ "itemId": "item-a-moved", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T13:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": ["item-a-moved"], "states": { "item-a": true, "item-a-moved": true } }
+    },
+    {
+      "id": "equal-time-removal-wins",
+      "left": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": ["a"],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T12:00:00.000Z" }]
+      },
+      "right": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": [],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": false, "changedAt": "2026-09-01T12:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": [], "states": { "item-a": false } }
+    },
+    {
+      "id": "moved-source-keeps-content-identity",
+      "left": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": ["a"],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T12:00:00.000Z" }]
+      },
+      "right": {
+        "updatedAt": "2026-09-01T13:00:00.000Z",
+        "itemIds": ["aMoved"],
+        "memberships": [{ "itemId": "item-a-moved", "tuneKey": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "present": true, "changedAt": "2026-09-01T13:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": ["item-a-moved"], "states": { "item-a": true, "item-a-moved": true } }
+    },
+    {
+      "id": "revised-source-preserves-stored-logical-key",
+      "left": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": ["a"],
+        "memberships": [{ "itemId": "item-a", "tuneKey": "locator:library::alpha", "present": true, "changedAt": "2026-09-01T12:00:00.000Z" }]
+      },
+      "right": {
+        "updatedAt": "2026-09-01T13:00:00.000Z",
+        "itemIds": ["aRevised"],
+        "memberships": [{ "itemId": "item-a-revised", "tuneKey": "locator:library::alpha", "present": true, "changedAt": "2026-09-01T13:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": ["item-a-revised"], "states": { "item-a": true, "item-a-revised": true } }
+    },
+    {
+      "id": "missing-library-source-keeps-embedded-favorite",
+      "left": {
+        "updatedAt": "2026-09-01T12:00:00.000Z",
+        "itemIds": [],
+        "memberships": []
+      },
+      "right": {
+        "updatedAt": "2026-09-01T13:00:00.000Z",
+        "itemIds": ["missing"],
+        "memberships": [{ "itemId": "item-missing", "tuneKey": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "present": true, "changedAt": "2026-09-01T13:00:00.000Z" }]
+      },
+      "expected": { "activeItemIds": ["item-missing"], "states": { "item-missing": true } }
+    }
+  ]
+}

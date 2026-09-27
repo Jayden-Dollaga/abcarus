@@ -8,6 +8,10 @@ const path = require("path");
 const DEFAULT_PORT = 43821;
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_REQUEST_BYTES = 32 * 1024 * 1024;
+const MOBILE_LIBRARY_CAPABILITIES = Object.freeze({
+  setListSchema: "abcarus.setlist.v2",
+  favoritesContract: "abcarus.favorites.v1",
+});
 
 function isWithinRoot(root, candidate) {
   return candidate === root || candidate.startsWith(`${root}${path.sep}`);
@@ -143,6 +147,7 @@ function createMobileLibraryServer({
           protocol: "abcarus-library-v1",
           serverId,
           libraryName: path.basename(root) || "ABCarus Library",
+          capabilities: MOBILE_LIBRARY_CAPABILITIES,
         });
         return;
       }
@@ -265,6 +270,7 @@ function createMobileLibraryServer({
 
 module.exports = {
   DEFAULT_PORT,
+  MOBILE_LIBRARY_CAPABILITIES,
   createMobileLibraryServer,
   encodeCredential,
   localIpv4Addresses,

@@ -6,14 +6,41 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["schema", "id", "title", "createdAt", "updatedAt", "print", "items"],
+  "allOf": [
+    {
+      "if": { "properties": { "id": { "const": "favorites" } }, "required": ["id"] },
+      "then": {
+        "required": ["kind", "favoriteMemberships"],
+        "properties": {
+          "kind": { "const": "favorites" },
+          "favoriteMemberships": {}
+        }
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "favorites" } }, "required": ["kind"] },
+      "then": {
+        "required": ["favoriteMemberships"],
+        "properties": {
+          "id": { "const": "favorites" },
+          "favoriteMemberships": {}
+        }
+      }
+    }
+  ],
   "properties": {
     "schema": { "const": "abcarus.setlist.v2" },
     "id": { "$ref": "#/$defs/nonEmptyString" },
     "title": { "type": "string" },
     "createdAt": { "$ref": "#/$defs/timestamp" },
     "updatedAt": { "$ref": "#/$defs/timestamp" },
+    "kind": { "enum": ["favorites"] },
     "print": { "$ref": "#/$defs/print" },
-    "items": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/item" } }
+    "items": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/item" } },
+    "favoriteMemberships": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/favoriteMembership" }
+    }
   },
   "$defs": {
     "nonEmptyString": { "type": "string", "minLength": 1 },
@@ -93,6 +120,17 @@
       "properties": {
         "includeInPdf": { "type": "boolean" },
         "pageBreakBefore": { "type": "boolean" }
+      }
+    },
+    "favoriteMembership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["itemId", "tuneKey", "present", "changedAt"],
+      "properties": {
+        "itemId": { "$ref": "#/$defs/nonEmptyString" },
+        "tuneKey": { "$ref": "#/$defs/nonEmptyString" },
+        "present": { "type": "boolean" },
+        "changedAt": { "$ref": "#/$defs/timestamp" }
       }
     },
     "item": {

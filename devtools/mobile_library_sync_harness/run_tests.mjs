@@ -104,6 +104,10 @@ try {
   const serverInfo = await (await request(`${base}/v1/info`, { headers })).json();
   assert.equal(serverInfo.protocol, "abcarus-library-v1");
   assert.equal(serverInfo.serverId, "12345678-1234-1234-1234-123456789abc");
+  assert.deepEqual(serverInfo.capabilities, {
+    setListSchema: "abcarus.setlist.v2",
+    favoritesContract: "abcarus.favorites.v1",
+  });
 
   const manifest = await (await request(`${base}/v1/files`, { headers })).json();
   assert.deepEqual(manifest.files.map((file) => file.path), ["nested/two.ABC", "one.abc"]);
@@ -194,6 +198,69 @@ try {
 
   const unchangedSync = await setListStore.syncDetailed([editedOnMobile]);
   assert.deepEqual(unchangedSync.changedIds, []);
+
+  const favoriteItem = (id, title) => ({
+    id,
+    tune: {
+      title,
+      composer: "",
+      key: "C",
+      rhythm: "",
+      origin: "",
+      groups: [],
+      source: { locatorHint: id, pathHint: `${id}.abc`, xNumberHint: "1" },
+      contentHash: "",
+    },
+  });
+  const favoriteA = favoriteItem("favorite-a", "Favorite A");
+  const favoriteB = favoriteItem("favorite-b", "Favorite B");
+  const favoritesFromDesktop = {
+    ...setList,
+    id: "favorites",
+    title: "Favorites",
+    kind: "favorites",
+    updatedAt: "2026-08-26T12:00:00.000Z",
+    items: [favoriteA],
+    favoriteMemberships: [{
+      itemId: favoriteA.id,
+      tuneKey: "locator:favorite-a",
+      present: true,
+      changedAt: "2026-08-26T12:00:00.000Z",
+    }],
+  };
+  await setListStore.sync([favoritesFromDesktop]);
+  const olderIndependentMobileAdd = {
+    ...favoritesFromDesktop,
+    updatedAt: "2026-08-25T12:00:00.000Z",
+    items: [favoriteB],
+    favoriteMemberships: [{
+      itemId: favoriteB.id,
+      tuneKey: "locator:favorite-b",
+      present: true,
+      changedAt: "2026-08-25T12:00:00.000Z",
+    }],
+  };
+  await setListStore.sync([olderIndependentMobileAdd]);
+  let mergedFavorites = (await setListStore.list()).find((entry) => entry.document.id === "favorites").document;
+  assert.deepEqual(mergedFavorites.items.map((item) => item.tune.title).sort(), ["Favorite A", "Favorite B"]);
+
+  const mobileRemoval = {
+    ...mergedFavorites,
+    updatedAt: "2026-08-27T12:00:00.000Z",
+    items: [favoriteB],
+    favoriteMemberships: mergedFavorites.favoriteMemberships.map((membership) => (
+      membership.itemId === favoriteA.id
+        ? { ...membership, present: false, changedAt: "2026-08-27T12:00:00.000Z" }
+        : membership
+    )),
+  };
+  await setListStore.sync([mobileRemoval]);
+  mergedFavorites = (await setListStore.list()).find((entry) => entry.document.id === "favorites").document;
+  assert.deepEqual(mergedFavorites.items.map((item) => item.tune.title), ["Favorite B"]);
+  assert.equal(
+    mergedFavorites.favoriteMemberships.find((membership) => membership.itemId === favoriteA.id).present,
+    false,
+  );
 
   selectedSetListRoot = path.join(tempRoot, "custom-set-lists");
   const secondSetList = {

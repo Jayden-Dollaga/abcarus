@@ -2,6 +2,11 @@
 
 const SET_LIST_SCHEMA = "abcarus.setlist.v2";
 const STORE_SCHEMA = "abcarus.setlist-sync.v1";
+const {
+  favoriteMemberships,
+  isFavoritesDocument,
+  mergeFavoriteDocuments,
+} = require("../shared/favorites-contract/index.cjs");
 
 function parseTime(value) {
   const time = Date.parse(String(value || ""));
@@ -91,10 +96,13 @@ function createMobileSetListSyncStore({ fs, path, getStoreDir, getDefaultDir } =
     const existing = state.entries[id];
     const target = String(filePath || (existing && existing.filePath) || "").trim()
       || await chooseNewPath(document, state.entries);
-    const incomingWins = !existing || parseTime(document.updatedAt) >= parseTime(existing.document.updatedAt);
-    const winner = incomingWins ? structuredClone(document) : existing.document;
+    const favoriteMerge = existing && isFavoritesDocument(document) && isFavoritesDocument(existing.document);
+    const incomingWins = favoriteMerge || !existing || parseTime(document.updatedAt) >= parseTime(existing.document.updatedAt);
+    const winner = favoriteMerge
+      ? mergeFavoriteDocuments(existing.document, document)
+      : (incomingWins ? structuredClone(document) : existing.document);
     state.entries[id] = { filePath: target, document: winner };
-    if (!incomingWins || String(filePath || "").trim() !== target) {
+    if (favoriteMerge || !incomingWins || String(filePath || "").trim() !== target) {
       await writeText(target, serialize(winner));
     }
     await save(state);
@@ -108,10 +116,13 @@ function createMobileSetListSyncStore({ fs, path, getStoreDir, getDefaultDir } =
       if (!validDocument(document)) continue;
       const id = String(document.id);
       const existing = state.entries[id];
-      if (existing && parseTime(existing.document.updatedAt) > parseTime(document.updatedAt)) continue;
+      const favoriteMerge = existing && isFavoritesDocument(document) && isFavoritesDocument(existing.document);
+      if (!favoriteMerge && existing && parseTime(existing.document.updatedAt) > parseTime(document.updatedAt)) continue;
       const target = String(existing && existing.filePath || "").trim()
         || await chooseNewPath(document, state.entries);
-      const copy = structuredClone(document);
+      const copy = favoriteMerge
+        ? mergeFavoriteDocuments(existing.document, document)
+        : structuredClone(document);
       if (existing && sameDocument(existing.document, copy)) continue;
       state.entries[id] = { filePath: target, document: copy };
       await writeText(target, serialize(copy));
@@ -137,6 +148,9 @@ function createMobileSetListSyncStore({ fs, path, getStoreDir, getDefaultDir } =
 
 module.exports = {
   createMobileSetListSyncStore,
+  favoriteMemberships,
+  isFavoritesDocument,
+  mergeFavoriteDocuments,
   parseTime,
   validDocument,
 };

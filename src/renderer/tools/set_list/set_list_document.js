@@ -10,6 +10,8 @@ const SET_LIST_RESOLUTION = Object.freeze({
 
 const MAX_SET_LIST_ITEMS = 500;
 const MAX_SET_LIST_LINKS = 50;
+const FAVORITES_ID = "favorites";
+const FAVORITE_MEMBERSHIPS = "favoriteMemberships";
 
 function canonicalizeAbcForHash(value) {
   return text(value).replace(/\r\n?/g, "\n");
@@ -179,6 +181,58 @@ function normalizeSetListDocumentItem(item, options = {}) {
   return normalized;
 }
 
+function favoriteTuneKey(tune) {
+  const snapshot = tune && typeof tune === "object" ? tune : {};
+  const hash = normalizeContentHash(snapshot.contentHash);
+  if (hash) return hash;
+  const source = snapshot.source && typeof snapshot.source === "object" ? snapshot.source : {};
+  const locator = normalizedIdentityText(source.locatorHint || source.tuneIdHint);
+  if (locator) return `locator:${locator}`;
+  const pathHint = text(source.pathHint || snapshot.sourcePath).replace(/\\/g, "/");
+  const basename = pathHint.split("/").pop() || "";
+  return [
+    `tune:${normalizedIdentityText(basename)}`,
+    normalizedIdentityText(source.xNumberHint || snapshot.xNumber),
+    normalizedIdentityText(snapshot.title),
+    normalizedIdentityText(snapshot.composer),
+  ].join("|");
+}
+
+function normalizeFavoriteMemberships(value, items, updatedAt) {
+  const records = new Map();
+  for (const raw of Array.isArray(value) ? value : []) {
+    const itemId = text(raw && raw.itemId).trim();
+    const tuneKey = text(raw && raw.tuneKey).trim();
+    const changedAt = text(raw && raw.changedAt).trim();
+    if (!itemId || !tuneKey || !Date.parse(changedAt)) continue;
+    const candidate = { itemId, tuneKey, present: raw.present === true, changedAt };
+    const current = records.get(itemId);
+    const candidateTime = Date.parse(candidate.changedAt);
+    const currentTime = current ? Date.parse(current.changedAt) : 0;
+    if (!current || candidateTime > currentTime
+      || (candidateTime === currentTime && !candidate.present && current.present)) {
+      records.set(itemId, candidate);
+    }
+  }
+  const activeIds = new Set(items.map((item) => String(item.id)));
+  for (const item of items) {
+    if (records.has(item.id)) continue;
+    records.set(item.id, {
+      itemId: item.id,
+      tuneKey: favoriteTuneKey(item.tune),
+      present: true,
+      changedAt: updatedAt,
+    });
+  }
+  for (const record of records.values()) {
+    if (record.present && !activeIds.has(record.itemId)) {
+      record.present = false;
+      record.changedAt = updatedAt;
+    }
+  }
+  return Array.from(records.values());
+}
+
 function normalizeSetListDocument(value, options = {}) {
   if (!value || typeof value !== "object" || value.schema !== SET_LIST_SCHEMA) return null;
   const makeId = typeof options.makeId === "function" ? options.makeId : () => "";
@@ -193,7 +247,7 @@ function normalizeSetListDocument(value, options = {}) {
     if (items.length >= MAX_SET_LIST_ITEMS) break;
   }
   const print = value.print && typeof value.print === "object" ? value.print : {};
-  return {
+  const normalized = {
     schema: SET_LIST_SCHEMA,
     id,
     title: text(value.title) || text(value.name) || "Untitled Set List",
@@ -210,6 +264,17 @@ function normalizeSetListDocument(value, options = {}) {
     },
     items,
   };
+  if (id === FAVORITES_ID || value.kind === "favorites") {
+    normalized.id = FAVORITES_ID;
+    normalized.title = "Favorites";
+    normalized.kind = "favorites";
+    normalized[FAVORITE_MEMBERSHIPS] = normalizeFavoriteMemberships(
+      value[FAVORITE_MEMBERSHIPS],
+      items,
+      normalized.updatedAt,
+    );
+  }
+  return normalized;
 }
 
 function sameJson(left, right) {
@@ -460,6 +525,7 @@ export {
   SET_LIST_SCHEMA,
   canonicalizeAbcForHash,
   convertLegacySetListState,
+  favoriteTuneKey,
   hashSetListAbc,
   insertSetListDocumentItem,
   moveSetListDocumentItems,

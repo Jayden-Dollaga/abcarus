@@ -1,6 +1,6 @@
 # ABCarus Set List Format
 
-Status: Draft 0.5
+Status: Draft 0.6
 
 Canonical schema identifier: `abcarus.setlist.v2`
 
@@ -52,6 +52,33 @@ codes use the first valid `F:` source URL in each stored tune, when present.
 `items` array order is performance order. The same source tune may appear more
 than once. Each occurrence has its own `id`, performance settings, notes, and
 export intent.
+
+### Favorites
+
+The system Favorites collection is a specialized Set List with `id` set to
+`favorites` and `kind` set to `favorites`. Its `items` array contains only the
+currently active favorites and is therefore usable by readers that do not
+implement Favorites synchronization.
+
+Writers that synchronize Favorites also preserve `favoriteMemberships`. Each
+membership contains `itemId`, a deterministic best-effort `tuneKey`, `present`,
+and `changedAt`. Removing a favorite sets `present` to `false`; it does not
+immediately delete the membership. These tombstones prevent an older replica
+from silently restoring a removed favorite.
+
+Favorites merge per membership rather than choosing one complete document.
+Independent additions are retained. For the same membership, the later
+`changedAt` wins; an equal-time add/remove conflict resolves to removal.
+Records with different IDs but the same `tuneKey` are presented as one
+membership using the same rule. Set List ordering and performance-order merge
+rules do not apply to Favorites.
+
+The normative merge, identity, timestamp, and tombstone rules are versioned as
+`abcarus.favorites.v1` in `docs/favorites-sync-contract.md`. Desktop and mobile
+implementations must pass
+`src/shared/favorites-contract/fixtures/v1.json`. Version 1 retains tombstones
+indefinitely and treats `tuneKey` as a best-effort compatibility identity, not
+as a permanent Library tune ID.
 
 ## Item
 

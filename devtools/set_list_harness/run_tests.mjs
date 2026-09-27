@@ -4,6 +4,14 @@ import fs from "node:fs";
 import { build } from "esbuild";
 import Ajv2020 from "ajv/dist/2020.js";
 import vm from "node:vm";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const {
+  FAVORITES_CONTRACT_VERSION,
+  favoriteTuneKey: canonicalFavoriteTuneKey,
+  mergeFavoriteDocuments,
+} = require("../../src/shared/favorites-contract/index.cjs");
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
@@ -17,6 +25,7 @@ const {
   SET_LIST_RESOLUTION,
   SET_LIST_SCHEMA,
   convertLegacySetListState,
+  favoriteTuneKey: rendererFavoriteTuneKey,
   hashSetListAbc,
   insertSetListDocumentItem,
   mergeSetListDocuments,
@@ -110,6 +119,43 @@ const {
 
 function readFixture(name) {
   return JSON.parse(fs.readFileSync(`devtools/set_list_harness/fixtures/${name}`, "utf8"));
+}
+
+function readFavoritesContractFixture() {
+  return JSON.parse(fs.readFileSync("src/shared/favorites-contract/fixtures/v1.json", "utf8"));
+}
+
+function materializeFavoritesDocument(definition, catalog) {
+  return {
+    schema: SET_LIST_SCHEMA,
+    id: "favorites",
+    title: "Favorites",
+    kind: "favorites",
+    createdAt: "2026-09-01T10:00:00.000Z",
+    updatedAt: definition.updatedAt,
+    print: {
+      headerText: "",
+      pageBreaks: "perTune",
+      compact: false,
+      titlePage: false,
+      tuneIndex: "none",
+      numberTunes: false,
+      indexQrCodes: false,
+    },
+    items: definition.itemIds.map((id) => structuredClone(catalog[id])),
+    favoriteMemberships: structuredClone(definition.memberships),
+  };
+}
+
+function favoriteMergeSemantics(document) {
+  const states = {};
+  for (const membership of [...document.favoriteMemberships].sort((a, b) => a.itemId.localeCompare(b.itemId))) {
+    states[membership.itemId] = membership.present;
+  }
+  return {
+    activeItemIds: document.items.map((item) => item.id).sort(),
+    states,
+  };
 }
 
 function test(name, fn) {
@@ -246,6 +292,58 @@ test("canonical portable documents satisfy the v2 JSON Schema", () => {
   for (const name of ["lightweight.abcarus-setlist.json", "self-contained.abcarus-setlist.json"]) {
     const canonical = JSON.parse(serializeSetListDocument(readFixture(name)));
     assert.equal(validate(canonical), true, `${name}: ${ajv.errorsText(validate.errors)}`);
+  }
+});
+
+test("Favorites preserve membership metadata and convert removals to tombstones", () => {
+  const source = readFixture("lightweight.abcarus-setlist.json");
+  const item = structuredClone(source.items[0]);
+  const favorites = normalizeSetListDocument({
+    ...source,
+    id: "favorites",
+    title: "Favorites",
+    kind: "favorites",
+    items: [item],
+  });
+  assert.equal(favorites.kind, "favorites");
+  assert.equal(favorites.favoriteMemberships.length, 1);
+  assert.equal(favorites.favoriteMemberships[0].present, true);
+
+  const removed = normalizeSetListDocument({
+    ...favorites,
+    updatedAt: "2026-08-21T12:00:00.000Z",
+    items: [],
+  });
+  assert.equal(removed.items.length, 0);
+  assert.equal(removed.favoriteMemberships[0].present, false);
+  assert.equal(removed.favoriteMemberships[0].changedAt, "2026-08-21T12:00:00.000Z");
+
+  const schema = readFixture("../../../docs/schemas/abcarus.setlist.v2.schema.json");
+  const ajv = new Ajv2020({ allErrors: true, strict: true, validateFormats: false });
+  const validate = ajv.compile(schema);
+  assert.equal(validate(JSON.parse(serializeSetListDocument(removed))), true, ajv.errorsText(validate.errors));
+});
+
+test("Favorites implementations satisfy the canonical v1 tune-key fixtures", () => {
+  const fixture = readFavoritesContractFixture();
+  assert.equal(fixture.contractVersion, FAVORITES_CONTRACT_VERSION);
+  for (const testCase of fixture.tuneKeyCases) {
+    assert.equal(canonicalFavoriteTuneKey(testCase.tune), testCase.expected, testCase.id);
+    assert.equal(rendererFavoriteTuneKey(testCase.tune), testCase.expected, `${testCase.id} (renderer)`);
+  }
+});
+
+test("Favorites merge satisfies the canonical v1 fixtures in either direction", () => {
+  const fixture = readFavoritesContractFixture();
+  for (const testCase of fixture.mergeCases) {
+    const left = materializeFavoritesDocument(testCase.left, fixture.itemCatalog);
+    const right = materializeFavoritesDocument(testCase.right, fixture.itemCatalog);
+    const expected = {
+      activeItemIds: [...testCase.expected.activeItemIds].sort(),
+      states: testCase.expected.states,
+    };
+    assert.deepEqual(favoriteMergeSemantics(mergeFavoriteDocuments(left, right)), expected, testCase.id);
+    assert.deepEqual(favoriteMergeSemantics(mergeFavoriteDocuments(right, left)), expected, `${testCase.id} (reversed)`);
   }
 });
 
