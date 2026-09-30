@@ -1189,6 +1189,7 @@ function createSetListFeature({
     addTuneById,
     addTuneWithTargetChoice,
     adjustActivePerformanceTranspose,
+    buildDocumentItem,
     buildExportAbc,
     clearActiveItem,
     close,

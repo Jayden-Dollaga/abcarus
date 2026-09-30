@@ -170,6 +170,9 @@
         <path d="m14 18-6-6 6-6"></path>
         <path d="m20 18-6-6 6-6"></path>
       </symbol>
+      <symbol id="ui-star" viewBox="0 0 24 24">
+        <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.12 2.12 0 0 0 1.595 1.16l5.164.75a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.769.559l-4.618-2.428a2.12 2.12 0 0 0-1.973 0l-4.617 2.428a.53.53 0 0 1-.77-.559l.883-5.14a2.12 2.12 0 0 0-.611-1.878L2.162 9.788a.53.53 0 0 1 .294-.904l5.165-.75a2.12 2.12 0 0 0 1.594-1.16z"></path>
+      </symbol>
       <symbol id="ui-reset" viewBox="0 0 24 24">
         <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
         <path d="M3 3v5h5"></path>
@@ -305,6 +308,9 @@
 	          <div class="sidebar-control sidebar-search">
 	            <label class="sidebar-label" for="librarySearch">Filter</label>
 	            <input id="librarySearch" type="text" placeholder="Any ABC header field…" aria-label="Filter library by any ABC header field" />
+	            <button id="btnLibraryFavorites" class="sidebar-action" type="button" title="Show Favorites (0)" aria-label="Show Favorites" aria-pressed="false">
+                <svg class="btn-icon" aria-hidden="true"><use href="#ui-star"></use></svg>
+              </button>
 	            <button id="btnLibraryClearFilter" class="sidebar-action" type="button" title="Clear filter">
                 <svg class="btn-icon icon-clear" aria-hidden="true"><use href="#ui-clear"></use></svg>
                 <span class="btn-text">Clear</span>

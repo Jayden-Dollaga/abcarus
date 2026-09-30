@@ -196,6 +196,7 @@ export function createPlaybackDomain({
       lastPlaybackAbortMessage: transport.lastPlaybackAbortMessage,
       lastPlaybackException: transport.lastPlaybackException,
       lastPlaybackGuardMessage: transport.lastPlaybackGuardMessage,
+      lastPlaybackIdx: transport.lastPlaybackIdx,
       lastPlaybackPayloadCache: transport.lastPlaybackPayloadCache,
       lastStartPlaybackIdx: transport.lastStartPlaybackIdx,
       pendingPlaybackPlan: transport.pendingPlaybackPlan,

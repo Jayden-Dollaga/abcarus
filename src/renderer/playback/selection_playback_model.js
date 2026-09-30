@@ -181,6 +181,170 @@ function stripRepeatsLengthSafe(text) {
   return stripRepeatsForSelection(text);
 }
 
+function stripQuotedAndCommentText(line) {
+  let out = "";
+  let quoted = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (ch === '"') {
+      quoted = !quoted;
+      out += " ";
+      continue;
+    }
+    if (!quoted && ch === "%") {
+      out += " ".repeat(line.length - i);
+      break;
+    }
+    out += quoted ? " " : ch;
+  }
+  return out;
+}
+
+function isWholeTuneMusicRange(text, start, end) {
+  const src = String(text || "");
+  const a = Math.max(0, Math.min(src.length, Number(start) || 0));
+  const b = Math.max(a, Math.min(src.length, Number(end) || 0));
+  let inBody = false;
+  let first = null;
+  let last = null;
+  let offset = 0;
+  for (const line of src.split(/\r\n|\n|\r/)) {
+    const raw = String(line || "");
+    const trimmed = raw.trim();
+    if (!inBody && /^\s*K\s*:/i.test(raw)) {
+      inBody = true;
+      offset += raw.length + 1;
+      continue;
+    }
+    if (!inBody || !trimmed || /^\s*(?:%%|[A-Za-z]:|\[[A-Za-z]+:)/.test(raw)) {
+      offset += raw.length + 1;
+      continue;
+    }
+    const code = stripQuotedAndCommentText(raw);
+    for (let i = 0; i < code.length; i += 1) {
+      if (!/[A-Ga-gxzZ]/.test(code[i])) continue;
+      const pos = offset + i;
+      if (first == null) first = pos;
+      last = pos + 1;
+    }
+    offset += raw.length + 1;
+  }
+  return first != null && last != null && a <= first && b >= last;
+}
+
+function normalizeSelectionRepeatsLengthSafe(text) {
+  const src = String(text || "");
+  const chars = src.split("");
+  const tokens = [];
+  let quoted = false;
+  for (let i = 0; i < src.length - 1; i += 1) {
+    const ch = src[i];
+    if (ch === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    if (quoted) continue;
+    if (ch === "%") {
+      while (i < src.length && src[i] !== "\n" && src[i] !== "\r") i += 1;
+      quoted = false;
+      continue;
+    }
+    const pair = src.slice(i, i + 2);
+    if (pair === "|:" || pair === ":|") {
+      tokens.push({ index: i, type: pair });
+      i += 1;
+    }
+  }
+  const stack = [];
+  const paired = new Set();
+  const pairedRanges = [];
+  const isTrailingSecondEnding = (token) => {
+    if (!token || token.type !== ":|") return false;
+    const tail = src.slice(token.index + 2);
+    const marker = tail.match(/^\s*2/);
+    if (!marker) return false;
+    return tail.slice(marker[0].length)
+      .replace(/%[^\r\n]*/g, "")
+      .replace(/\$/g, "")
+      .trim() === "";
+  };
+  for (const token of tokens) {
+    if (token.type === "|:") {
+      stack.push(token);
+    } else if (stack.length) {
+      const opening = stack.pop();
+      // `:|2` starts a second ending. When it is the final token in the
+      // selection, that ending's music lies outside the range, so the repeat
+      // structure is incomplete and must be played linearly.
+      if (isTrailingSecondEnding(token)) continue;
+      paired.add(opening.index);
+      paired.add(token.index);
+      pairedRanges.push({ start: opening.index, end: token.index + 2 });
+    }
+  }
+  for (const token of tokens) {
+    if (paired.has(token.index)) continue;
+    if (token.type === "|:") chars[token.index + 1] = " ";
+    else chars[token.index] = " ";
+  }
+  const linear = chars.join("");
+  return linear.replace(/(\[\s*\d+|\|\s*\d+)/g, (match, _capture, index) => {
+    if (pairedRanges.some((range) => index >= range.start && index < range.end)) return match;
+    const bar = match.indexOf("|");
+    return bar >= 0
+      ? `${" ".repeat(bar)}|${" ".repeat(match.length - bar - 1)}`
+      : " ".repeat(match.length);
+  });
+}
+
+function hasOpeningRepeatBeforeSelection(text, start) {
+  const src = String(text || "");
+  const end = Math.max(0, Math.min(src.length, Number(start) || 0));
+  const windowStart = Math.max(0, end - 1024);
+  const before = src.slice(windowStart, end);
+  const tokenRe = /\|:|::/g;
+  let candidate = null;
+  for (let match = tokenRe.exec(before); match; match = tokenRe.exec(before)) candidate = match;
+  if (!candidate) return false;
+  const tail = before.slice(candidate.index + candidate[0].length)
+    .replace(/%[^\r\n]*/g, "")
+    .replace(/^\s*\[?\s*P\s*:.*$/gim, "")
+    .replace(/\$/g, "")
+    .trim();
+  return tail === "";
+}
+
+function buildIsolatedSelectionPlaybackText(text, start, end) {
+  const src = String(text || "");
+  const a = Math.max(0, Math.min(src.length, Number(start) || 0));
+  const b = Math.max(a, Math.min(src.length, Number(end) || 0));
+  const lines = src.split(/\r\n|\n|\r/);
+  const header = [];
+  const context = [];
+  let offset = 0;
+  let bodyStarted = false;
+  for (const line of lines) {
+    const raw = String(line || "");
+    const lineEnd = offset + raw.length;
+    const isPart = /^\s*P\s*:/i.test(raw) || /^\s*\[\s*P\s*:/i.test(raw);
+    const isContext = /^\s*(?:%%|[KMLQVI]:)/i.test(raw) || /^\s*\[\s*(?:K|M|L|Q|V|I)\s*:/i.test(raw);
+    if (!bodyStarted) {
+      if (!isPart) header.push(raw);
+      if (/^\s*K\s*:/i.test(raw)) bodyStarted = true;
+    } else if (lineEnd <= a && isContext && !isPart) {
+      context.push(raw);
+    }
+    offset = lineEnd + 1;
+  }
+  const headerPrefix = `${header.join("\n")}\n${context.length ? `${context.join("\n")}\n` : ""}`;
+  const bodyPrefix = hasOpeningRepeatBeforeSelection(src, a) ? "|: " : "| ";
+  const selection = normalizeSelectionRepeatsLengthSafe(`${bodyPrefix}${src.slice(a, b)}`);
+  return {
+    text: `${headerPrefix}${selection}\n`,
+    offset: headerPrefix.length + bodyPrefix.length - a,
+  };
+}
+
 function stripGchordDirectives(text) {
   return String(text || "").replace(/^\s*%%\s*MIDI\s+gchord[^\r\n]*$/gim, "");
 }
@@ -188,11 +352,15 @@ function stripGchordDirectives(text) {
 export {
   applyMutedVoicesToTuneRoot,
   buildSelectionPlaybackToast,
+  buildIsolatedSelectionPlaybackText,
   extendVisibleRangeToRepeatClose,
   focusRangeCrossesRepeats,
   getFirstPlayableVoiceIdFromTuneRoot,
   hasIntentionalSelectionPlaybackSpan,
+  hasOpeningRepeatBeforeSelection,
   hasRepeatTokensInSlice,
+  isWholeTuneMusicRange,
+  normalizeSelectionRepeatsLengthSafe,
   normalizeVoiceIdToken,
   parseMutedVoiceSetting,
   resolveEffectiveMutedVoiceIds,

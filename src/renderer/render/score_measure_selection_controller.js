@@ -32,6 +32,7 @@ function createScoreMeasureSelectionController({
     const centerX = noteX + (noteWidth * 0.5);
     let leftX = null;
     let rightX = null;
+    let rightPlayEnd = null;
     let staffY = noteY;
     let staffHeight = noteHeight;
     for (const bar of svg.querySelectorAll(".bar-hl")) {
@@ -48,6 +49,7 @@ function createScoreMeasureSelectionController({
         staffHeight = barHeight;
       } else if (barX > centerX && (rightX == null || barX < rightX)) {
         rightX = barX;
+        rightPlayEnd = numberAttr(bar, "data-end");
         staffY = barY;
         staffHeight = barHeight;
       }
@@ -57,7 +59,7 @@ function createScoreMeasureSelectionController({
     return {
       svg,
       playStart: noteStart,
-      playEnd: Math.max(noteStart, noteEnd == null ? noteStart : noteEnd),
+      playEnd: Math.max(noteStart, rightPlayEnd == null ? (noteEnd == null ? noteStart : noteEnd) : rightPlayEnd),
       x: Math.max(0, leftX),
       y: Math.max(0, staffY),
       width: Math.max(2, rightX - leftX),
@@ -94,7 +96,15 @@ function createScoreMeasureSelectionController({
   function measureAtPoint(clientX, clientY, target = null) {
     if (target && target.classList && target.classList.contains("note-hl")) {
       const direct = buildMeasureForNote(target);
-      if (direct) return direct;
+      if (direct) {
+        if (!measures.length) rebuildIndex();
+        const indexed = measures.find((measure) => (
+          measure.svg === direct.svg
+          && sameStaff(measure.y, measure.height, direct.y, direct.height)
+          && Math.abs(measure.x - direct.x) < 1
+        ));
+        return indexed || direct;
+      }
     }
     for (const measure of measures) {
       const rect = measure.svg.getBoundingClientRect();
@@ -133,7 +143,7 @@ function createScoreMeasureSelectionController({
     const rows = [];
     for (const measure of measures) {
       if (hasRenderBounds) {
-        if (measure.playEnd < renderStart || measure.playStart > renderEnd) continue;
+        if (measure.playEnd <= renderStart || measure.playStart >= renderEnd) continue;
       } else {
         const number = resolveMeasureNumber(measure.playStart);
         if (!Number.isInteger(number) || number < from || number > to) continue;

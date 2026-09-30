@@ -5,7 +5,12 @@ import { readFile } from "node:fs/promises";
 
 const source = await readFile("src/renderer/library/tree_view.js", "utf8");
 const encoded = Buffer.from(source, "utf8").toString("base64");
-const { buildFileTooltip, buildGroupTooltip, buildTuneTooltip } = await import(`data:text/javascript;base64,${encoded}`);
+const {
+  buildFileTooltip,
+  buildGroupTooltip,
+  buildTuneTooltip,
+  LIBRARY_TOOLTIP_DELAY_MS,
+} = await import(`data:text/javascript;base64,${encoded}`);
 const count = (entry) => entry.tuneCount ?? entry.tunes.length;
 
 const fileTooltip = buildFileTooltip({
@@ -48,5 +53,6 @@ assert.match(tuneTooltip, /X: 42/);
 assert.match(tuneTooltip, /Meter: 6\/8/);
 assert.match(tuneTooltip, /Tempo: 1\/4=120/);
 assert.match(tuneTooltip, /Group: Dance, Set/);
+assert.equal(LIBRARY_TOOLTIP_DELAY_MS, 1400, "detailed tooltips must default to a 1400 ms delay");
 
 console.log("library tooltip harness: all tests passed");

@@ -50,7 +50,6 @@ function main() {
   // Guard new selection-playback controls to prevent silent schema drift.
   const requiredDefaults = {
     playbackSelectionLoopEnabled: false,
-    playbackLoopGapMs: 0,
     playbackSelectionSuppressRepeats: true,
     playbackSelectionMuteGchords: false,
     playbackSelectionAllowMidiDrums: false,
@@ -63,6 +62,7 @@ function main() {
     mobileSetListFolder: "",
     autoScalePanes: true,
     scoreFitMode: "content",
+    libraryRichTooltipDelayMs: 1400,
   };
   for (const [key, expected] of Object.entries(requiredDefaults)) {
     assert(seen.has(key), `missing schema key: ${key}`);

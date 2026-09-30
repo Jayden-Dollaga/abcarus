@@ -314,9 +314,10 @@ function createRenderPipelineController({
             anno_stop: (type, start, stop, x, y, w, h) => {
               if (!abcInstance) return;
               if (type === "beam" || type === "slur" || type === "tuplet") return;
-              const cls = type === "bar" ? "bar-hl" : "note-hl";
+              const playable = type === "note" || type === "rest" || type === "grace";
+              const cls = type === "bar" ? "bar-hl" : playable ? "note-hl" : "score-annotation-hl";
               abcInstance.out_svg(
-                '<rect class="' + cls + ' _' + start + '_" data-start="' + start + '" data-end="' + stop + '" x="'
+                '<rect class="' + cls + ' _' + start + '_" data-type="' + type + '" data-start="' + start + '" data-end="' + stop + '" x="'
               );
               abcInstance.out_sxsy(x, '" y="', y);
               abcInstance.out_svg(

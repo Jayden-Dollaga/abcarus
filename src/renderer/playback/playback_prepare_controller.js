@@ -177,7 +177,9 @@ function createPlaybackPrepareController({
         playbackText = neutralizeMidiDrumDirectivesForPlayback(playbackText);
       }
       if (scopedOptions.muteGchords) playbackText = stripChordSymbolsForPlayback(playbackText);
-      if (scopedOptions.suppressRepeats) playbackText = stripRepeatsLengthSafe(playbackText);
+      if (scopedOptions.suppressRepeats && scopedOptions.origin !== "selection" && scopedOptions.origin !== "ab") {
+        playbackText = stripRepeatsLengthSafe(playbackText);
+      }
       let effectiveMuted = null;
       const mutedVoiceMap = selectionRuntime.getAbMutedVoiceMap();
       if (mutedVoiceMap && Object.values(mutedVoiceMap).some(Boolean)) {
@@ -359,7 +361,17 @@ function createPlaybackPrepareController({
 
     for (const t of tunes) p.add(t[0], t[1], t[3]);
 
-    transport.playbackState = buildPlaybackState(tunes[0][0]);
+    let playbackRoot = tunes[0][0];
+    if (selectionMode) {
+      // With MIDI drums abc2svg may expose a tune entry point after the first
+      // drum cycle. A selected mini-tune must always begin at its real head.
+      let guard = 0;
+      while (playbackRoot && playbackRoot.ts_prev && guard < 200000) {
+        playbackRoot = playbackRoot.ts_prev;
+        guard += 1;
+      }
+    }
+    transport.playbackState = buildPlaybackState(playbackRoot);
     transport.clearTrace();
     windowRef.__abcarusPlaybackDebug = {
       getState: () => ({
@@ -394,6 +406,7 @@ function createPlaybackPrepareController({
         chordOnBarError: Boolean(transport.lastPlaybackChordOnBarError),
       }),
       getPlaybackRange: () => transport.cloneRange(transport.playbackRange),
+      getPayloadText: () => playbackPayloadText,
       getTimeline: () => (transport.playbackState ? transport.playbackState.timeline : []),
       getTrace: () => transport.getTrace(),
       clearTrace: () => { transport.clearTrace(); },

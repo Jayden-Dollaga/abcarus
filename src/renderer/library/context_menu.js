@@ -41,6 +41,8 @@ function createLibraryContextMenu({
   openMoveTuneModal = () => {},
   reorderTune = async () => ({ ok: false }),
   addTuneToSetList = async () => {},
+  isTuneFavorite = () => false,
+  toggleTuneFavorite = async () => {},
   copyFileTuneList = async () => {},
   appendTuneToActiveFile = async () => {},
   buildTemplatesPreviewContextMenuItems = () => [],
@@ -161,6 +163,11 @@ function createLibraryContextMenu({
       } catch (e) {
         showToast(e && e.message ? e.message : String(e), 5000);
       }
+      return;
+    }
+    if (action === "toggleFavorite" && menuTarget && menuTarget.type === "tune") {
+      hide();
+      await toggleTuneFavorite(menuTarget.tuneId);
       return;
     }
     if (action === "appendTuneToActiveFile" && menuTarget && menuTarget.type === "tune") {
@@ -334,6 +341,10 @@ function createLibraryContextMenu({
         && !sourceDirty
       );
       const items = [
+        {
+          label: isTuneFavorite(target.tuneId) ? "Remove from Favorites" : "Add to Favorites",
+          action: "toggleFavorite",
+        },
         { label: "Add to Set List", action: "addToSetList" },
         { label: "Copy Path + X", action: "copyTuneReference", disabled: !sourcePath || !sourceXNumber },
       ];

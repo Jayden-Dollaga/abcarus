@@ -11,6 +11,9 @@ export function createScoreInteractionController({
   pickClosestNoteElement = () => null,
   setEditorSelectionRange = () => {},
   setPendingPlaybackRangeOrigin = () => {},
+  clearPlaybackPositionHighlight = () => {},
+  isPlaybackBusy = () => false,
+  stopPlaybackForRangeEdit = () => {},
   getPlaybackRange = () => ({ loop: false }),
   setPlaybackRange = () => {},
   isFocusModeEnabled = () => false,
@@ -132,12 +135,25 @@ export function createScoreInteractionController({
       clearTimeoutRef(pendingFocusClickTimer);
       pendingFocusClickTimer = null;
     }
+    const target = event && event.target;
+    const textTarget = target && typeof target.closest === "function" ? target.closest("text") : null;
+    if (textTarget) return false;
     const measure = measureSelection.measureAtPoint(
       Number(event && event.clientX) || 0,
       Number(event && event.clientY) || 0,
       event && event.target,
     );
     if (!measure || !Number.isFinite(measure.playStart)) return false;
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    const selection = outputElement && outputElement.ownerDocument
+      && typeof outputElement.ownerDocument.getSelection === "function"
+      ? outputElement.ownerDocument.getSelection()
+      : null;
+    if (selection && typeof selection.removeAllRanges === "function") {
+      try { selection.removeAllRanges(); } catch {}
+    }
+    if (isPlaybackBusy()) stopPlaybackForRangeEdit();
+    clearPlaybackPositionHighlight();
     if (isFocusModeEnabled()) {
       normalScoreSelection = null;
       const result = selectFocusMeasureAtRenderOffset(measure);
@@ -149,7 +165,7 @@ export function createScoreInteractionController({
       const editorEnd = Math.max(editorStart, mapRenderIdxToEditorOffset(normalScoreSelection.playEnd));
       if (!Number.isFinite(editorStart) || !Number.isFinite(editorEnd) || editorEnd <= editorStart) return false;
       setPendingPlaybackRangeOrigin("svg");
-      setEditorSelectionRange(editorStart, editorEnd);
+      setEditorSelectionRange(editorStart, editorEnd, { highlight: false });
       const playbackRange = getPlaybackRange() || {};
       setPlaybackRange({
         startOffset: editorStart,
@@ -158,12 +174,14 @@ export function createScoreInteractionController({
         loop: Boolean(playbackRange.loop),
       });
     }
-    if (event && typeof event.preventDefault === "function") event.preventDefault();
     measureSelection.renderHighlight();
     return true;
   }
 
   function handleScoreRendered() {
+    if (!isFocusModeEnabled() && normalScoreSelection && normalScoreSelection.awaitingEnd) {
+      normalScoreSelection = null;
+    }
     measureSelection.handleScoreRendered();
   }
 
@@ -198,6 +216,15 @@ export function createScoreInteractionController({
     const playStart = Number(mapEditorOffsetToRenderIdx(start));
     const playEnd = Number(mapEditorOffsetToRenderIdx(end));
     if (!Number.isFinite(playStart) || !Number.isFinite(playEnd) || playEnd < playStart) return;
+    if (
+      normalScoreSelection
+      && normalScoreSelection.awaitingEnd
+      && normalScoreSelection.playStart === playStart
+      && normalScoreSelection.playEnd === playEnd
+    ) {
+      measureSelection.renderHighlight();
+      return;
+    }
     normalScoreSelection = { playStart, playEnd };
     measureSelection.renderHighlight();
   }

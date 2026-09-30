@@ -171,20 +171,17 @@ function createPlaybackStartController({
       if (hasPartsOrder) engineStart = transport.playbackState.rootSymbol;
     }
 
-    const rangeGap = rangeForStart && Number(rangeForStart.loopGapMs);
-    const loopGapMs = Math.max(0, Math.min(5000, Math.round(
-      Number.isFinite(rangeGap) ? rangeGap : (Number(transport.playbackLoopGapMs) || 0)
-    )));
     const useNativeLoop = Boolean(
       rangeForStart
       && rangeForStart.loop
-      && loopGapMs === 0
       && (rangeForStart.origin === "focus" || rangeForStart.origin === "selection" || rangeForStart.origin === "ab")
     );
     let playerStart = engineStart;
     if (useNativeLoop) {
       // abc2svg restarts native loops at loopStart.ts_next. A silent proxy lets
       // both the first pass and every subsequent pass begin at the same symbol.
+      // Keep it detached from ts_prev: otherwise abc2svg discovers a global P:
+      // order behind the selection and may jump to an earlier part before playing.
       playerStart = {
         type: -1,
         dur: 0,
@@ -193,7 +190,7 @@ function createPlaybackStartController({
         v: engineStart.v,
         p_v: engineStart.p_v,
         seqst: true,
-        ts_prev: engineStart.ts_prev || null,
+        ts_prev: null,
         ts_next: engineStart,
       };
     }
@@ -207,7 +204,7 @@ function createPlaybackStartController({
     }, 0);
   }
 
-  function resolvePlaybackEndSymbol(range, startSymbol) {
+  function resolvePlaybackEndSymbol(range, startSymbol, { includeGeneratedTail = true } = {}) {
     if (!range || range.endOffset == null) return null;
     if (!startSymbol || !Number.isFinite(startSymbol.istart)) return null;
     const endOffset = Number(range.endOffset);
@@ -221,7 +218,7 @@ function createPlaybackStartController({
     // Audio expansion inserts drums and accompaniment into the timeline without
     // source offsets. They belong to the selected source symbol, so stopping at
     // the first one would exclude that symbol's generated playback entirely.
-    while (endSymbol && !Number.isFinite(endSymbol.istart)) {
+    while (includeGeneratedTail && endSymbol && !Number.isFinite(endSymbol.istart)) {
       endSymbol = endSymbol.ts_next || null;
     }
     return endSymbol;
@@ -329,7 +326,24 @@ function createPlaybackStartController({
       abortStart("Playback range start is invalid.");
       return;
     }
-    let startSym = findSymbolAtOrAfter(startAbcOffset);
+    let startSym = null;
+    if (selectionMode && transport.playbackState) {
+      // abc2svg's timeline head can be a later source measure when MIDI drums
+      // are present. The mini-tune's earliest playable source symbol is the
+      // unambiguous beginning of a selected range.
+      const firstSourceEvent = Array.isArray(transport.playbackState.symbols)
+        ? transport.playbackState.symbols.find(({ symbol }) => (
+          symbol
+          && !symbol.noplay
+          && Number.isFinite(symbol.istart)
+          && Number.isFinite(symbol.dur)
+          && symbol.dur > 0
+        ))
+        : null;
+      startSym = firstSourceEvent ? firstSourceEvent.symbol : transport.playbackState.startSymbol;
+    } else {
+      startSym = findSymbolAtOrAfter(startAbcOffset);
+    }
     if (!scopedMode && Number.isFinite(startAbcOffset) && startAbcOffset > 0 && editorView) {
       let ch = "";
       try { ch = editorView.state.doc.sliceString(range.startOffset, range.startOffset + 1); } catch {}
@@ -381,14 +395,17 @@ function createPlaybackStartController({
       return;
     }
 
-    if (startSym.istart < startAbcOffset && range.startOffset !== 0) {
+    if (!selectionMode && startSym.istart < startAbcOffset && range.startOffset !== 0) {
       stopPlaybackFromGuard("PlaybackRange.startOffset mapped to a symbol before startOffset.");
       return;
     }
 
     transport.activateRangeForStart({
       range,
-      endSymbol: resolvePlaybackEndSymbol(range, startSym),
+      // A selection is prepared as a standalone mini-tune. Its natural end is
+      // therefore the exact selection boundary; applying the original-file
+      // offset a second time can only move that boundary to the wrong measure.
+      endSymbol: selectionMode ? null : resolvePlaybackEndSymbol(range, startSym),
       startSymbol: startSym,
     });
     try {

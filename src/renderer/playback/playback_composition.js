@@ -13,6 +13,7 @@ import {
   buildSelectionPlaybackToast,
   hasIntentionalSelectionPlaybackSpan,
   hasRepeatTokensInSlice,
+  isWholeTuneMusicRange,
   parseMutedVoiceSetting,
 } from "./selection_playback_model.js";
 import { createSoundfontController } from "./soundfont_controller.js";
@@ -54,11 +55,11 @@ export function createPlaybackComposition({
     selectionPlaybackRuntime: selectionRuntime,
     getSettings: () => ({
       ...(host.getSettings() || {}),
-      selectionLoopElement: elements.selectionLoopEnabled,
-      selectionSuppressElement: elements.selectionSuppressEnabled,
-      selectionGchordsElement: elements.selectionGchordsEnabled,
-      selectionDrumsElement: elements.selectionDrumsEnabled,
-      selectionMutedVoicesElement: elements.selectionMutedVoices,
+      selectionLoopElement: elements.focus && elements.focus.selectionLoopEnabled,
+      selectionSuppressElement: elements.focus && elements.focus.selectionSuppressEnabled,
+      selectionGchordsElement: elements.focus && elements.focus.selectionGchordsEnabled,
+      selectionDrumsElement: elements.focus && elements.focus.selectionDrumsEnabled,
+      selectionMutedVoicesElement: elements.focus && elements.focus.selectionMutedVoices,
     }),
     getEditorView: host.getEditorView,
     getEditorText: host.getEditorText,
@@ -75,6 +76,7 @@ export function createPlaybackComposition({
     parseMutedVoiceSetting,
     hasIntentionalSelectionPlaybackSpan,
     hasRepeatTokensInSlice,
+    isWholeTuneMusicRange,
     buildSelectionPlaybackToast,
     globalObject: windowRef,
   });

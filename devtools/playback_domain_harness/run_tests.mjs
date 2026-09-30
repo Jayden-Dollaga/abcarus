@@ -42,9 +42,68 @@ const { injectGchordOn } = await importBundledModule(
 const { createAbSelectionPlaybackController } = await importBundledModule(
   "src/renderer/playback/ab_selection_playback_controller.js",
 );
-const { hasIntentionalSelectionPlaybackSpan } = await importBundledModule(
+const {
+  buildIsolatedSelectionPlaybackText,
+  hasOpeningRepeatBeforeSelection,
+  hasIntentionalSelectionPlaybackSpan,
+  isWholeTuneMusicRange,
+  normalizeSelectionRepeatsLengthSafe,
+} = await importBundledModule(
   "src/renderer/playback/selection_playback_model.js",
 );
+
+{
+  assert.equal(normalizeSelectionRepeatsLengthSafe("A B :|2 C|"), "A B  |  C|");
+  assert.equal(normalizeSelectionRepeatsLengthSafe("|: A B |1 C :|2 D|"), "|: A B |1 C :|2 D|");
+  assert.equal(
+    normalizeSelectionRepeatsLengthSafe("|: A |1 B :|2 C |3 D :|4 E"),
+    "|: A |1 B :|2 C |  D  |  E",
+    "matched repeats survive while a separate unmatched volta is linearized",
+  );
+  const source = "X:1\nP:ABBA\nL:1/8\nM:4/4\nK:C\n[P:A]\n|: C D|E F:|\n[P:B]\nG A|B c|\n";
+  const start = source.indexOf("G A");
+  const end = source.indexOf("|B c") + 1;
+  const isolated = buildIsolatedSelectionPlaybackText(source, start, end);
+  assert.equal(isolated.text.includes("P:ABBA"), false);
+  assert.equal(isolated.text.includes("C D"), false);
+  assert.equal(isolated.text.includes("G A|"), true);
+  assert.equal(start + isolated.offset, isolated.text.indexOf("G A"));
+  assert.equal(isWholeTuneMusicRange(source, source.indexOf("C D"), source.length), true);
+  assert.equal(isWholeTuneMusicRange(source, start, end), false);
+}
+
+{
+  const source = "X:1\nP:AB\nK:C\n[P:A]\n|: C D :: $\n%\n[P:B]\nE F :| G A |\n";
+  const start = source.indexOf("E F");
+  const end = source.indexOf(" G A");
+  assert.equal(hasOpeningRepeatBeforeSelection(source, start), true);
+  const isolated = buildIsolatedSelectionPlaybackText(source, start, end);
+  assert.match(isolated.text, /\|: E F :\|/);
+  assert.equal(start + isolated.offset, isolated.text.indexOf("E F"));
+}
+
+{
+  const source = await readFile(
+    resolve("devtools/playback_domain_harness/fixtures/sectional_end_selection.abc"),
+    "utf8",
+  );
+  const partD = source.indexOf("[P:D]");
+  const partE = source.indexOf("[P:E]");
+  const dStart = source.indexOf("S A4 _B4", partD);
+  const dSelection = buildIsolatedSelectionPlaybackText(source, dStart, partE);
+  assert.equal(dSelection.text.includes("P:ABBCDEFDE"), false);
+  assert.equal(dSelection.text.includes("=c/d/c/B/"), false, "earlier part C must not leak into part D playback");
+  assert.equal(dSelection.text.includes("S A4 _B4"), true);
+  assert.equal(dSelection.text.includes("[P:E]"), false);
+
+  const eStart = source.indexOf("FGFE D2 E2", partE);
+  const eEnd = source.indexOf("\nAFGE D2 ^G2", eStart);
+  const eSelection = buildIsolatedSelectionPlaybackText(source, eStart, eEnd);
+  assert.equal(eSelection.text.includes("FGFE D2 E2"), true);
+  assert.equal(eSelection.text.includes("AFGE F>E\"_Fine\" D2"), true);
+  assert.doesNotMatch(eSelection.text, /\|:|:\||\[\s*\d+|\|\s*\d+/);
+  assert.equal(eSelection.text.includes("AFGE D2 ^G2"), false, "measure after the selection must not leak into playback");
+}
 const {
   advanceFocusScoreSelection,
   advanceScoreRenderSelection,
@@ -158,6 +217,14 @@ assert.deepEqual(
   { playStart: 700, playEnd: 940, awaitingEnd: false },
 );
 assert.deepEqual(
+  advanceScoreRenderSelection(
+    { playStart: 700, playEnd: 940, awaitingEnd: false },
+    { playStart: 1100, playEnd: 1160 },
+  ),
+  { playStart: 1100, playEnd: 1160, awaitingEnd: true },
+  "a double-click after a completed range must start a fresh selection",
+);
+assert.deepEqual(
   applyScoreRenderSelectionToFocusPlan(
     { ok: true, plan: { startOffset: 400, endOffset: 440, mode: "segment" } },
     { playStart: 380, playEnd: 420 },
@@ -183,6 +250,17 @@ const scoreMeasureIndex = {
 assert.equal(resolveFocusMeasureNumberAtRenderOffset(scoreMeasureIndex, 100), 1);
 assert.equal(resolveFocusMeasureNumberAtRenderOffset(scoreMeasureIndex, 179), 2);
 assert.equal(resolveFocusMeasureNumberAtRenderOffset(scoreMeasureIndex, 220), 3);
+
+const repeatedBoundaryMeasureIndex = {
+  anchor: 0,
+  istarts: [100, 140, 140, 180, 220, 220, 260],
+  byNumber: new Map([[1, [100]], [2, [140]], [3, [180]], [4, [220]], [5, [260]]]),
+};
+assert.equal(
+  resolveFocusMeasureNumberAtRenderOffset(repeatedBoundaryMeasureIndex, 225),
+  4,
+  "explicit abc2svg bar numbers must win over duplicate repeat-boundary starts",
+);
 
 {
   const playbackStarts = [];
@@ -437,6 +515,7 @@ assert.equal(
   assert.equal(calls[0][1], endSymbol);
   assert.equal(calls[0][3], true, "zero-gap selection loops must use abc2svg native looping");
   assert.equal(calls[0][0].ts_next, startSymbol, "native loop proxy must restart at the selected first symbol");
+  assert.equal(calls[0][0].ts_prev, null, "scoped playback proxy must not inherit the tune's global P: routing");
   assert.equal(calls[0][0].dur, 0, "native loop proxy must not add an audible event before the selection");
 
   calls.length = 0;
@@ -455,7 +534,7 @@ assert.equal(
   nativeTransport.playbackStartArmed = true;
   nativeTransport.playbackLoopGapMs = 500;
   nativeController.startPlaybackFromPrepared(128);
-  assert.equal(calls[0][3], false, "a configured Focus loop pause must use controlled restarts");
+  assert.equal(calls[0][3], true, "legacy loop-gap settings must not disable seamless native looping");
 }
 
 const trace = [];

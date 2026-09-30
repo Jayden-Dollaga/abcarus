@@ -16,6 +16,7 @@ function installDevUiSmokeHook({
   dispatchAction = async () => {},
   setPayloadModeSettingEnabled = () => {},
   setRightPaneSize = () => {},
+  mapEditorOffsetToRenderIdx = (offset) => offset,
 } = {}) {
   if (!windowRef || !devConfig || devConfig.ABCARUS_DEV_UI_SMOKE !== "1") return false;
   windowRef.__abcarusDevUiSmoke = {
@@ -42,6 +43,7 @@ function installDevUiSmokeHook({
     dispatchAction,
     setPayloadModeSettingEnabled,
     setRightPaneSize,
+    mapEditorOffsetToRenderIdx,
     snapshot: () => {
       const state = getState() || {};
       const playButton = elements.playButton || null;
@@ -68,6 +70,7 @@ function installDevUiSmokeHook({
         tuneSelectValue: tuneSelect ? String(tuneSelect.value || "") : "",
         tuneSelectText: tuneSelect ? String(tuneSelect.textContent || "").trim() : "",
         playbackDebug: getPlaybackDebug(),
+        playbackDiagnostics: state.playbackDiagnostics || null,
         soundfont: state.soundfont || null,
         payloadMode: Boolean(state.payloadMode),
         selection: state.selection || null,

@@ -3169,6 +3169,241 @@ async function runUiSmoke(win) {
     try { app.exit(process.exitCode || 0); } catch { process.exit(process.exitCode || 0); }
   };
 
+  if (process.env.ABCARUS_DEV_SCORE_SELECTION_SMOKE === "1") {
+    await new Promise((resolve) => setTimeout(resolve, 1800));
+    const source = Buffer.from(String(process.env.ABCARUS_DEV_SCORE_SELECTION_SOURCE || ""), "base64").toString("utf8");
+    const selectionResult = await win.webContents.executeJavaScript(
+      `(async () => {
+        const source = ${JSON.stringify(source)};
+        const requestedRange = ${JSON.stringify(String(process.env.ABCARUS_DEV_SCORE_SELECTION_RANGE || "37-42"))};
+        const inspectMs = ${JSON.stringify(Math.max(0, Number(process.env.ABCARUS_DEV_SCORE_SELECTION_INSPECT_MS) || 0))};
+        const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const hook = window.__abcarusDevUiSmoke;
+        if (!hook || !source) return { ok: false, reason: "missing-hook-or-source" };
+        hook.setText(source);
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+          if (document.querySelectorAll("#out .note-hl[data-start]").length > 20) break;
+          await wait(100);
+        }
+        const partA = source.indexOf("[P:A]");
+        const partD = source.indexOf("[P:D]");
+        const partE = source.indexOf("[P:E]");
+        const partF = source.indexOf("[P:F]");
+        const nthIndexOf = (needle, from, occurrence) => {
+          let index = Math.max(0, from);
+          for (let count = 0; count < occurrence; count += 1) {
+            index = source.indexOf(needle, index);
+            if (index < 0) return -1;
+            if (count + 1 < occurrence) index += needle.length;
+          }
+          return index;
+        };
+        const rangeSpecs = {
+          "1-8": { firstOffset: source.indexOf("AGGF FEFG", partA), lastOffset: source.indexOf("D8", partA) },
+          "19-28": { firstOffset: source.indexOf("A4 _B4", partD), lastOffset: nthIndexOf("z4 (3_BA^G", partD, 3) },
+          "19-32": { firstOffset: source.indexOf("A4 _B4", partD), lastOffset: source.indexOf("A8", partD) },
+          "33-36": { firstOffset: source.indexOf("FGFE", partE), lastOffset: source.indexOf("AFGE", partE) },
+          "37-45": { firstOffset: source.indexOf("A8", partF), lastOffset: nthIndexOf("z2", partF, 4) },
+        };
+        const rangeSpec = rangeSpecs[requestedRange] || rangeSpecs["37-45"];
+        const firstOffset = rangeSpec.firstOffset;
+        const lastOffset = rangeSpec.lastOffset;
+        const shouldPreplay = requestedRange === "37-45";
+        const firstRenderOffset = hook.mapEditorOffsetToRenderIdx(firstOffset);
+        const lastRenderOffset = hook.mapEditorOffsetToRenderIdx(lastOffset);
+        const first = document.querySelector("#out .note-hl[data-start='" + firstRenderOffset + "']");
+        const last = document.querySelector("#out .note-hl[data-start='" + lastRenderOffset + "']");
+        const dispatchDoubleClick = (element) => {
+          const rect = element.getBoundingClientRect();
+          element.dispatchEvent(new MouseEvent("dblclick", {
+            bubbles: true,
+            cancelable: true,
+            clientX: rect.left + (rect.width / 2),
+            clientY: rect.top + (rect.height / 2),
+          }));
+        };
+        if (!first || !last) {
+          return {
+            ok: false,
+            reason: "target-notes-not-found",
+            firstOffset,
+            lastOffset,
+            firstRenderOffset,
+            lastRenderOffset,
+            starts: Array.from(document.querySelectorAll("#out .note-hl[data-start]"))
+              .map((node) => node.getAttribute("data-start"))
+              .slice(-30),
+          };
+        }
+        if (shouldPreplay) {
+          hook.clickPlay();
+          for (let attempt = 0; attempt < 80; attempt += 1) {
+            const state = hook.snapshot();
+            if (state.isPlaying || state.playbackDiagnostics?.lastPlaybackException) break;
+            await wait(100);
+          }
+        }
+        const beforeSelection = hook.snapshot();
+        const scoreTextSelectable = getComputedStyle(first.ownerSVGElement).userSelect !== "none";
+        const nativeSelection = window.getSelection();
+        const scoreTextNode = first.ownerSVGElement.querySelector("text")?.firstChild || null;
+        if (nativeSelection && scoreTextNode) {
+          const nativeRange = document.createRange();
+          nativeRange.selectNodeContents(scoreTextNode);
+          nativeSelection.removeAllRanges();
+          nativeSelection.addRange(nativeRange);
+        }
+        dispatchDoubleClick(first);
+        await wait(100);
+        const nativeSelectionCleared = !nativeSelection
+          || nativeSelection.rangeCount === 0
+          || nativeSelection.isCollapsed;
+        const afterFirst = hook.snapshot();
+        const firstLabel = document.getElementById("playbackScopeLabel")?.textContent || "";
+        const firstNoteHighlights = Array.from(document.querySelectorAll("#out .note-select")).map((node) => ({
+          start: node.getAttribute("data-start"),
+          end: node.getAttribute("data-end"),
+          x: node.getAttribute("x"),
+          y: node.getAttribute("y"),
+          width: node.getAttribute("width"),
+          svg: Array.from(document.querySelectorAll("#out svg")).indexOf(node.ownerSVGElement),
+        }));
+        const firstRangeHighlights = Array.from(document.querySelectorAll("#out .svg-focus-selection")).map((node) => ({
+          x: node.getAttribute("x"),
+          y: node.getAttribute("y"),
+          width: node.getAttribute("width"),
+          height: node.getAttribute("height"),
+          svg: Array.from(document.querySelectorAll("#out svg")).indexOf(node.ownerSVGElement),
+        }));
+        const playheadsAfterFirst = document.querySelectorAll("#out .svg-playhead-line").length;
+        const stalePlayhead = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        stalePlayhead.setAttribute("class", "svg-playhead-line");
+        last.ownerSVGElement.appendChild(stalePlayhead);
+        const stalePlayheadStyle = getComputedStyle(stalePlayhead);
+        const stalePlayheadVisible = stalePlayheadStyle.display !== "none"
+          && stalePlayheadStyle.visibility !== "hidden"
+          && Number(stalePlayheadStyle.fillOpacity) > 0;
+        dispatchDoubleClick(last);
+        await wait(100);
+        const afterLast = hook.snapshot();
+        const lastLabel = document.getElementById("playbackScopeLabel")?.textContent || "";
+        const playheadsAfterSelection = Array.from(document.querySelectorAll("#out .svg-playhead-line")).map((node) => ({
+          x: node.getAttribute("x"),
+          y: node.getAttribute("y"),
+          width: node.getAttribute("width"),
+          height: node.getAttribute("height"),
+        }));
+        const cursorHighlightsAfterSelection = document.querySelectorAll(
+          "#out .note-select, #out .svg-follow-measure, #out .svg-playhead-line"
+        ).length;
+        hook.scheduleRender();
+        await wait(180);
+        const rerenderedRangeHighlights = document.querySelectorAll("#out .svg-focus-selection").length;
+        const loop = document.getElementById("practiceLoopEnabled");
+        if (loop) {
+          loop.checked = true;
+          loop.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        window.__abcarusPlaybackTrace = true;
+        const traceBeforePlayback = window.__abcarusPlaybackDebug?.getTrace?.().length || 0;
+        hook.clickPlay();
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+          const state = hook.snapshot();
+          if (state.playbackDiagnostics?.lastPlaybackException) break;
+          const traceLength = window.__abcarusPlaybackDebug?.getTrace?.().length || 0;
+          const hasPlaybackHighlight = document.querySelectorAll(
+            "#out .svg-follow-measure, #out .note-hl.note-on"
+          ).length >= 2;
+          if (
+            state.playbackDiagnostics?.activePlaybackRange
+            && traceLength > traceBeforePlayback
+            && hasPlaybackHighlight
+          ) break;
+          await wait(100);
+        }
+        if (inspectMs > 0) await wait(inspectMs);
+        const playing = hook.snapshot();
+        const playbackTrace = window.__abcarusPlaybackDebug?.getTrace?.().slice(0, 30) || [];
+        const preparedPayload = window.__abcarusPlaybackDebug?.getPayloadText?.() || "";
+        const playheadsDuringPlayback = document.querySelectorAll("#out .svg-playhead-line").length;
+        const followMeasuresDuringPlayback = document.querySelectorAll("#out .svg-follow-measure").length;
+        const highlightedNotesDuringPlayback = document.querySelectorAll("#out .note-hl.note-on").length;
+        hook.clickStop();
+        const selectionOk = afterLast.selection
+          && afterLast.selection.from === firstOffset
+          && afterLast.selection.to >= lastOffset + 3
+          && firstNoteHighlights.length === 0
+          && firstRangeHighlights.length === 1
+          && beforeSelection.isPlaying === shouldPreplay
+          && scoreTextSelectable
+          && nativeSelectionCleared
+          && afterFirst.isPlaying === false
+          && afterFirst.isPaused === false
+          && playheadsAfterFirst === 0
+          && stalePlayheadVisible === false
+          && /^Bars \\d+\u2013\\d+$/.test(lastLabel)
+          && playheadsAfterSelection.length === 0
+          && cursorHighlightsAfterSelection === 0
+          && rerenderedRangeHighlights > 0
+          && playing.playbackDiagnostics?.activePlaybackRange?.startOffset === firstOffset
+          && playing.playbackDiagnostics?.activePlaybackRange?.endOffset === afterLast.selection.to
+          && playing.playbackDiagnostics?.activePlaybackRange?.loop === true
+          && playing.playbackDiagnostics?.activePlaybackEndAbcOffset == null
+          && !preparedPayload.includes("P:ABBCDEFDE")
+          && !preparedPayload.includes("[P:A]")
+          && playheadsDuringPlayback === 0
+          && followMeasuresDuringPlayback > 0
+          && highlightedNotesDuringPlayback > 0;
+        return {
+          ok: Boolean(selectionOk),
+          firstOffset,
+          lastOffset,
+          firstRenderOffset,
+          lastRenderOffset,
+          afterFirst: afterFirst.selection,
+          afterLast: afterLast.selection,
+          playbackBeforeSelection: {
+            isPlaying: beforeSelection.isPlaying,
+            isPaused: beforeSelection.isPaused,
+            lastPlaybackIdx: beforeSelection.playbackDiagnostics?.lastPlaybackIdx ?? null,
+          },
+          scoreTextSelectable,
+          nativeSelectionCleared,
+          playbackAfterFirst: {
+            isPlaying: afterFirst.isPlaying,
+            isPaused: afterFirst.isPaused,
+            playheads: playheadsAfterFirst,
+          },
+          firstLabel,
+          lastLabel,
+          firstNoteHighlights,
+          firstRangeHighlights,
+          playheadsAfterSelection,
+          cursorHighlightsAfterSelection,
+          stalePlayheadVisible,
+          rerenderedRangeHighlights,
+          selectedText: source.slice(afterLast.selection.from, afterLast.selection.to),
+          activePlaybackRange: playing.playbackDiagnostics?.activePlaybackRange || null,
+          activePlaybackEndAbcOffset: playing.playbackDiagnostics?.activePlaybackEndAbcOffset ?? null,
+          lastStartPlaybackIdx: playing.playbackDiagnostics?.lastStartPlaybackIdx ?? null,
+          lastPlaybackIdx: playing.playbackDiagnostics?.lastPlaybackIdx ?? null,
+          playbackIndexOffset: playing.playbackDiagnostics?.playbackIndexOffset ?? null,
+          playbackException: playing.playbackDiagnostics?.lastPlaybackException || null,
+          requestedRange,
+          playbackTrace,
+          preparedPayloadIsIsolated: !preparedPayload.includes("P:ABBCDEFDE") && !preparedPayload.includes("[P:A]"),
+          playheadsDuringPlayback,
+          followMeasuresDuringPlayback,
+          highlightedNotesDuringPlayback,
+          overlays: document.querySelectorAll("#out .svg-focus-selection").length,
+        };
+      })()`,
+      true
+    );
+    exitUiSmoke(Boolean(selectionResult && selectionResult.ok), "score selection", selectionResult);
+    return;
+  }
+
   if (process.env.ABCARUS_DEV_PAYLOAD_SMOKE === "1") {
     await new Promise((resolve) => setTimeout(resolve, 1800));
     const payloadResult = await win.webContents.executeJavaScript(
@@ -3821,7 +4056,7 @@ async function runUiSmoke(win) {
           }));
         };
         dispatchScoreMouse(scoreNotes[0], "dblclick");
-        await wait(60);
+        await wait(180);
         dispatchScoreMouse(scoreNotes[scoreNotes.length - 1], "dblclick");
         await wait(80);
         const normalSelection = window.__abcarusDevUiSmoke.snapshot().selection;

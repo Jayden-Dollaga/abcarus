@@ -22,6 +22,7 @@ export function createMainEditorUpdateRuntime({
   getFollowPlayback = () => false,
   scheduleCursorNoteHighlight = () => {},
   scheduleCursorScoreReveal = () => {},
+  clearCursorScoreHighlights = () => {},
   clearNoteSelection = () => {},
   updatePlaybackRangeFromSelection = () => {},
   getActiveErrorHighlight = () => null,
@@ -75,12 +76,17 @@ export function createMainEditorUpdateRuntime({
     if (!isRawMode() && update.selectionSet && !isPlaying()) {
       const idx = update.state.selection.main.anchor;
       handleChordProSelectionOffset(idx);
-      if (getFollowPlayback()) {
-        scheduleCursorNoteHighlight(idx);
+      const hasRangeSelection = update.state.selection.main.empty === false;
+      if (hasRangeSelection) {
+        clearCursorScoreHighlights();
       } else {
-        clearNoteSelection();
+        if (getFollowPlayback()) {
+          scheduleCursorNoteHighlight(idx);
+        } else {
+          clearNoteSelection();
+        }
+        scheduleCursorScoreReveal(idx);
       }
-      scheduleCursorScoreReveal(idx);
       if (!suppressPlaybackRangeSelectionSync) {
         const origin = pendingPlaybackRangeOrigin || "cursor";
         pendingPlaybackRangeOrigin = null;

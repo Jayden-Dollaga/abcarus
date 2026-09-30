@@ -10,6 +10,7 @@ function createScoreHighlightController({
   findMeasureRangeAt,
   mapEditorOffsetToRenderIdx,
   requestAnimationFrameRef = (callback) => requestAnimationFrame(callback),
+  cancelAnimationFrameRef = (id) => cancelAnimationFrame(id),
   getFollowEnabled = () => false,
   isRawMode = () => false,
   isPlaying = () => false,
@@ -243,70 +244,8 @@ function createScoreHighlightController({
     return false;
   }
 
-  function setSvgPlayheadFromElements(noteEl, preferredBarEl) {
-    if (!noteEl) {
-      clearSvgPlayhead();
-      return;
-    }
-    const svg = noteEl.ownerSVGElement;
-    if (!svg) return;
-    const hostParent = (noteEl.parentNode && noteEl.parentNode.nodeType === 1 && svg.contains(noteEl.parentNode))
-      ? noteEl.parentNode
-      : svg;
-
-    const xRaw = Number(noteEl.getAttribute("x"));
-    const wRaw = Number(noteEl.getAttribute("width"));
-    const yRaw = Number(noteEl.getAttribute("y"));
-    const hRaw = Number(noteEl.getAttribute("height"));
-    if (!Number.isFinite(xRaw)) return;
-    const xCenter = xRaw + (Number.isFinite(wRaw) ? (wRaw / 2) : 0);
-    const width = Number.isFinite(wRaw) ? wRaw : 0;
-
-    let y = Number.isFinite(yRaw) ? yRaw : 0;
-    let h = Number.isFinite(hRaw) ? hRaw : 0;
-    const barEl = preferredBarEl && preferredBarEl.ownerSVGElement === svg ? preferredBarEl : null;
-    if (barEl) {
-      const by = Number(barEl.getAttribute("y"));
-      const bh = Number(barEl.getAttribute("height"));
-      if (Number.isFinite(by)) y = by;
-      if (Number.isFinite(bh)) h = bh;
-    }
-    const pad = clampNumber(getFollowPlayheadPad(), 0, 24, 8);
-    const yTop = Math.max(0, y - pad);
-    const height = Math.max(1, h + pad * 2);
-
-    if (lastSvgPlayheadSvg && lastSvgPlayheadSvg !== svg) {
-      clearSvgPlayhead();
-    }
-    if (lastSvgPlayheadEl && lastSvgPlayheadEl.parentNode && lastSvgPlayheadEl.parentNode !== hostParent) {
-      try { lastSvgPlayheadEl.remove(); } catch {}
-      lastSvgPlayheadEl = null;
-    }
-    if (!lastSvgPlayheadEl || lastSvgPlayheadSvg !== svg || (lastSvgPlayheadEl && lastSvgPlayheadEl.parentNode !== hostParent)) {
-      const rect = documentRef.createElementNS("http://www.w3.org/2000/svg", "rect");
-      rect.setAttribute("class", "svg-playhead-line");
-      rect.setAttribute("width", String(clampNumber(getFollowPlayheadWidth(), 1, 6, 2)));
-      rect.setAttribute("rx", "1");
-      rect.setAttribute("ry", "1");
-      rect.setAttribute("pointer-events", "none");
-      try { hostParent.appendChild(rect); } catch { try { svg.appendChild(rect); } catch {} }
-      lastSvgPlayheadEl = rect;
-      lastSvgPlayheadSvg = svg;
-    }
-    try {
-      const wSetting = clampNumber(getFollowPlayheadWidth(), 1, 6, 2);
-      const halfW = wSetting / 2;
-      const shift = clampNumber(getFollowPlayheadShift(), -20, 20, 0);
-      const leadGap = Math.max(3, Math.min(8, width * 0.28));
-      const xTarget = xCenter - leadGap + shift;
-
-      lastSvgPlayheadEl.setAttribute("width", String(wSetting));
-      lastSvgPlayheadEl.setAttribute("rx", String(Math.max(0, Math.min(2, halfW))));
-      lastSvgPlayheadEl.setAttribute("ry", String(Math.max(0, Math.min(2, halfW))));
-      lastSvgPlayheadEl.setAttribute("x", String(xTarget - halfW));
-      lastSvgPlayheadEl.setAttribute("y", String(yTop));
-      lastSvgPlayheadEl.setAttribute("height", String(height));
-    } catch {}
+  function setSvgPlayheadFromElements() {
+    clearSvgPlayhead();
   }
 
   function pickClosestNoteElement(els) {
@@ -334,10 +273,31 @@ function createScoreHighlightController({
   }
 
   function clearNoteSelection() {
+    const out = getOutElement();
+    if (out) {
+      for (const el of Array.from(out.querySelectorAll(".note-hl.note-select") || [])) {
+        try { el.classList.remove("note-select"); } catch {}
+      }
+    }
     for (const el of lastNoteSelection) {
       try { el.classList.remove("note-select"); } catch {}
     }
     lastNoteSelection = [];
+  }
+
+  function clearCursorScoreHighlights() {
+    pendingCursorNoteHighlightIdx = null;
+    pendingCursorScoreRevealIdx = null;
+    if (pendingCursorNoteHighlightRaf != null) {
+      try { cancelAnimationFrameRef(pendingCursorNoteHighlightRaf); } catch {}
+      pendingCursorNoteHighlightRaf = null;
+    }
+    if (pendingCursorScoreRevealRaf != null) {
+      try { cancelAnimationFrameRef(pendingCursorScoreRevealRaf); } catch {}
+      pendingCursorScoreRevealRaf = null;
+    }
+    clearNoteSelection();
+    clearSvgFollowMeasureHighlight();
   }
 
   function extractRenderIdxFromElementClass(el) {
@@ -438,7 +398,7 @@ function createScoreHighlightController({
     if (!out) return;
     clearNoteSelection();
     if (!Number.isFinite(renderIdx)) return;
-    const els = out.querySelectorAll("._" + renderIdx + "_");
+    const els = out.querySelectorAll(".note-hl._" + renderIdx + "_");
     if (!els.length) return;
     lastNoteSelection = Array.from(els);
     for (const el of lastNoteSelection) {
@@ -461,6 +421,8 @@ function createScoreHighlightController({
       const next = pendingCursorNoteHighlightIdx;
       pendingCursorNoteHighlightIdx = null;
       if (!getFollowEnabled() || isRawMode() || isPlaying()) return;
+      const editorView = getEditorView();
+      if (editorView && editorView.state.selection.main.empty === false) return;
       highlightEditorNoteAtIndex(next, { scrollToNote });
     });
   }
@@ -503,12 +465,15 @@ function createScoreHighlightController({
       pendingCursorScoreRevealRaf = null;
       const next = pendingCursorScoreRevealIdx;
       pendingCursorScoreRevealIdx = null;
+      const editorView = getEditorView();
+      if (editorView && editorView.state.selection.main.empty === false) return;
       revealEditorCursorInScore(next);
     });
   }
 
   return {
     clearNoteSelection,
+    clearCursorScoreHighlights,
     clearSvgFollowBarHighlight,
     clearSvgFollowMeasureHighlight,
     clearSvgPlayhead,

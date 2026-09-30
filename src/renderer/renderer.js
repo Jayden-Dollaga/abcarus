@@ -54,6 +54,7 @@ import { createLibraryLifecycleController } from "./library/library_lifecycle_co
 import { createLibraryDocumentContext } from "./library/library_document_context.js";
 import { createLibraryCrudDomain } from "./library/library_crud_domain.js";
 import { createLibraryUiDomain } from "./library/library_ui_domain.js";
+import { createLibraryFavoritesController } from "./library/library_favorites_controller.js";
 import { createLibraryRuntimeStore } from "./library/library_runtime_store.js";
 import { normalizeLibraryPath, pathsEqual } from "./library/path_utils.js";
 import { fileExists, mkdirp, readFile, renameFile, safeBasename, safeDirname, writeFile } from "./io/file_ops.js";
@@ -243,6 +244,7 @@ const $librarySearch = document.getElementById("librarySearch");
 const $btnLibraryRefresh = document.getElementById("btnLibraryRefresh");
 const $libraryRoot = document.getElementById("libraryRoot");
 const $btnLibraryClearFilter = document.getElementById("btnLibraryClearFilter");
+const $btnLibraryFavorites = document.getElementById("btnLibraryFavorites");
 const $btnToggleLibrary = document.getElementById("btnToggleLibrary");
 const $btnToggleSetList = document.getElementById("btnToggleSetList");
 const $libraryToolbarMenu = document.getElementById("libraryToolbarMenu");
@@ -708,6 +710,7 @@ const payloadModeFeature = createPayloadModeFeature({
     $btnOpenFolderAsLibrary,
     $btnLibraryRefresh,
     $btnLibraryClearFilter,
+    $btnLibraryFavorites,
     $groupBy,
     $sortBy,
     $sortTunesBy,
@@ -796,6 +799,7 @@ const chordProFeature = createChordProFeature({
     $btnOpenFolderAsLibrary,
     $btnLibraryRefresh,
     $btnLibraryClearFilter,
+    $btnLibraryFavorites,
     $groupBy,
     $sortBy,
     $sortTunesBy,
@@ -1094,9 +1098,12 @@ const setListFeature = createSetListFeature({
   enableDraggable: enableDraggableModal,
 });
 
+let libraryFavoritesController = null;
+
 if (window.api && typeof window.api.onMobileSetListsChanged === "function") {
   window.api.onMobileSetListsChanged((payload) => {
     setListFeature.reloadSyncedSetList(payload).catch(logErr);
+    if (libraryFavoritesController) libraryFavoritesController.refresh().catch(logErr);
   });
 }
 
@@ -1221,6 +1228,7 @@ const scoreHighlightController = createScoreHighlightController({
   findMeasureRangeAt,
   mapEditorOffsetToRenderIdx,
   requestAnimationFrameRef: (callback) => requestAnimationFrame(callback),
+  cancelAnimationFrameRef: (id) => cancelAnimationFrame(id),
   getFollowEnabled: playbackDomain.isFollowEnabled,
   isRawMode: () => isRawModeActive(),
   isPlaying,
@@ -1240,6 +1248,7 @@ const practiceBarHighlightController = createPracticeBarHighlightController({
 const practiceBarHighlightPlugin = practiceBarHighlightController.plugin;
 const {
   clearNoteSelection,
+  clearCursorScoreHighlights,
   clearSvgFollowBarHighlight,
   clearSvgFollowMeasureHighlight,
   clearSvgPlayhead,
@@ -1272,6 +1281,9 @@ const scoreInteractionController = createScoreInteractionController({
   setPendingPlaybackRangeOrigin: (origin) => {
     editorRuntime.setPendingPlaybackRangeOrigin(origin);
   },
+  clearPlaybackPositionHighlight: playbackDomain.resetUiState,
+  isPlaybackBusy: playbackDomain.isBusy,
+  stopPlaybackForRangeEdit: playbackDomain.stopTransport,
   getPlaybackRange,
   setPlaybackRange,
   isFocusModeEnabled: playbackDomain.isFocusEnabled,
@@ -1870,6 +1882,16 @@ const libraryUiDomain = createLibraryUiDomain({
   },
   actions: {
     addTuneToSetList: (tuneId, options = {}) => setListFeature.addTuneWithTargetChoice(tuneId, options),
+    isTuneFavorite: (tuneId) => Boolean(libraryFavoritesController && libraryFavoritesController.isTuneFavorite(tuneId)),
+    toggleTuneFavorite: (tuneId) => libraryFavoritesController
+      ? libraryFavoritesController.toggleTune(tuneId)
+      : Promise.resolve(false),
+    onLibraryFilterCleared: () => {
+      if (libraryFavoritesController) libraryFavoritesController.handleExternalFilterClear();
+    },
+    onLibraryIndexChanged: () => {
+      if (libraryFavoritesController) libraryFavoritesController.scheduleRefresh();
+    },
     copyFileTuneList: (filePath) => openFileTuneListExport(filePath),
     buildTemplatesPreviewContextMenuItems: (target) => templatesFeature.buildPreviewContextMenuItems(target),
     confirmReloadFromDisk,
@@ -1948,6 +1970,26 @@ const libraryActions = libraryUiDomain.actions;
 const libraryTreeView = libraryUiDomain.treeView;
 const libraryContextMenu = libraryUiDomain.contextMenu;
 window.libraryActions = libraryActions;
+
+libraryFavoritesController = createLibraryFavoritesController({
+  button: $btnLibraryFavorites,
+  getLibraryIndex: libraryRuntime.getIndex,
+  listSetLists: () => window.api && typeof window.api.listMobileSetLists === "function"
+    ? window.api.listMobileSetLists()
+    : Promise.resolve({ ok: false, entries: [] }),
+  publishSetList: (document, filePath) => window.api && typeof window.api.publishSetListForMobile === "function"
+    ? window.api.publishSetListForMobile(document, filePath)
+    : Promise.resolve({ ok: false, error: "Favorites sync is unavailable." }),
+  buildDocumentItem: setListFeature.buildDocumentItem,
+  resolveItemSource: setListRendererAdapter.resolveItemSource,
+  setLibraryFilter: (files, label) => libraryUiDomain.setLibraryFilter(files, label),
+  clearLibraryFilter: () => libraryUiDomain.clearLibraryFilter(),
+  onFavoritesChanged: () => libraryUiDomain.renderLibraryTree(),
+  showToast,
+  logError: logErr,
+});
+libraryFavoritesController.wire();
+libraryFavoritesController.refresh({ applyActiveFilter: false }).catch(logErr);
 const aboutModalController = createAboutModalController({
   modal: $aboutModal,
   infoElement: $aboutInfo,
@@ -2898,15 +2940,27 @@ diagnosticsDomain.installDevUiSmoke({
     settingsSnapshot.patch({ payloadModeEnabled: Boolean(enabled) });
   },
   setRightPaneSize: (size) => layoutController.setRightPaneSizes(Number(size)),
-  getState: () => ({
-    ...playbackDomain.getUiState(),
-    selection: editorRuntime.getView() ? {
-      from: editorRuntime.getView().state.selection.main.from,
-      to: editorRuntime.getView().state.selection.main.to,
-    } : null,
-    soundfont: playbackDomain.getDiagnosticsSnapshot().soundfont,
-    payloadMode: isPayloadMode(),
-  }),
+  mapEditorOffsetToRenderIdx,
+  getState: () => {
+    const diagnostics = playbackDomain.getDiagnosticsSnapshot();
+    return {
+      ...playbackDomain.getUiState(),
+      playbackDiagnostics: {
+        activePlaybackEndAbcOffset: diagnostics.activePlaybackEndAbcOffset,
+        activePlaybackRange: diagnostics.activePlaybackRange,
+        lastPlaybackIdx: diagnostics.lastPlaybackIdx,
+        lastPlaybackException: diagnostics.lastPlaybackException,
+        lastStartPlaybackIdx: diagnostics.lastStartPlaybackIdx,
+        playbackIndexOffset: diagnostics.playbackIndexOffset,
+      },
+      selection: editorRuntime.getView() ? {
+        from: editorRuntime.getView().state.selection.main.from,
+        to: editorRuntime.getView().state.selection.main.to,
+      } : null,
+      soundfont: diagnostics.soundfont,
+      payloadMode: isPayloadMode(),
+    };
+  },
   getHasSvg: () => Boolean($out && $out.querySelector("svg")),
   getPlaybackDebug: () => window.__abcarusPlaybackDebug || null,
 });
@@ -3244,6 +3298,7 @@ function initEditor() {
       getFollowPlayback: playbackDomain.isFollowEnabled,
       scheduleCursorNoteHighlight,
       scheduleCursorScoreReveal,
+      clearCursorScoreHighlights,
       clearNoteSelection,
       updatePlaybackRangeFromSelection,
       getActiveErrorHighlight: () => errorsFeature.getActiveHighlight(),
@@ -3611,8 +3666,10 @@ function setEditorSelectionAt(idx) {
   return editorRuntime.setSelectionAt(idx, { onSelect: highlightNoteAtIndex });
 }
 
-function setEditorSelectionRange(start, end) {
-  return editorRuntime.setSelectionRange(start, end, { onSelect: highlightNoteAtIndex });
+function setEditorSelectionRange(start, end, { highlight = true } = {}) {
+  return editorRuntime.setSelectionRange(start, end, {
+    onSelect: highlight ? highlightNoteAtIndex : () => {},
+  });
 }
 
 function setEditorSelectionAtLineCol(line, col) {

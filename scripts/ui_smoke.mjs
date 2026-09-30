@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,6 +26,16 @@ if (args.has("--transform")) env.ABCARUS_DEV_TRANSFORM_SMOKE = "1";
 if (args.has("--transform-keys")) {
   env.ABCARUS_DEV_TRANSFORM_SMOKE = "1";
   env.ABCARUS_DEV_TRANSFORM_KEYS_SMOKE = "1";
+}
+const scoreSelectionArg = process.argv.slice(2).find((arg) => arg.startsWith("--score-selection="));
+if (scoreSelectionArg) {
+  const fixturePath = path.resolve(scoreSelectionArg.slice("--score-selection=".length));
+  env.ABCARUS_DEV_SCORE_SELECTION_SMOKE = "1";
+  env.ABCARUS_DEV_SCORE_SELECTION_SOURCE = Buffer.from(readFileSync(fixturePath, "utf8"), "utf8").toString("base64");
+  const rangeArg = process.argv.slice(2).find((arg) => arg.startsWith("--score-selection-range="));
+  if (rangeArg) env.ABCARUS_DEV_SCORE_SELECTION_RANGE = rangeArg.slice("--score-selection-range=".length);
+  const inspectMsArg = process.argv.slice(2).find((arg) => arg.startsWith("--score-selection-inspect-ms="));
+  if (inspectMsArg) env.ABCARUS_DEV_SCORE_SELECTION_INSPECT_MS = inspectMsArg.slice("--score-selection-inspect-ms=".length);
 }
 delete env.ELECTRON_RUN_AS_NODE;
 

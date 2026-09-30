@@ -8,6 +8,7 @@ app_name="abcarus"
 desktop_id="com.abcarus.ABCarus"
 electron_dist="${repo_root}/node_modules/electron/dist"
 icon_path="${repo_root}/assets/icons/icon.png"
+metainfo_path="${repo_root}/assets/appstream/${desktop_id}.metainfo.xml"
 python_embed_root="${repo_root}/third_party/python-embed/linux-x64"
 clean=1
 
@@ -20,6 +21,11 @@ fi
 
 if [[ ! -f "${icon_path}" ]]; then
   echo "Icon not found: ${icon_path}"
+  exit 1
+fi
+
+if [[ ! -f "${metainfo_path}" ]]; then
+  echo "AppStream metainfo not found: ${metainfo_path}"
   exit 1
 fi
 
@@ -103,22 +109,7 @@ cp "${appdir}/${desktop_id}.desktop" "${appdir}/usr/share/applications/${desktop
 cp "${icon_path}" "${appdir}/${app_name}.png"
 
 mkdir -p "${appdir}/usr/share/metainfo"
-cat > "${appdir}/usr/share/metainfo/${desktop_id}.appdata.xml" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<component type="desktop-application">
-  <id>${desktop_id}</id>
-  <name>ABCarus</name>
-  <summary>ABC notation editor and toolkit</summary>
-  <description>
-    <p>ABCarus is a small Electron app for editing, converting, and auditioning ABC notation.</p>
-    <p>Import and export flows support common MusicXML workflows with bundled tools for portability.</p>
-  </description>
-  <content_rating type="oars-1.1"/>
-  <metadata_license>CC0-1.0</metadata_license>
-  <project_license>MIT</project_license>
-  <launchable type="desktop-id">${desktop_id}.desktop</launchable>
-</component>
-EOF
+cp "${metainfo_path}" "${appdir}/usr/share/metainfo/${desktop_id}.metainfo.xml"
 
 python_root="${python_embed_root}"
 if [[ ! -x "${python_root}/bin/python3" ]]; then

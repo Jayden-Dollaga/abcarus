@@ -1,0 +1,66 @@
+X:243
+T:Rast Ciftetelli selection regression
+P:ABBCDEFDE
+L:1/8
+Q:1/4=165
+M:4/4
+I:linebreak $
+K:D
+V:1 treble transpose=-12
+%%MIDI drumbars 2
+%%MIDI drumon
+%%MIDI drum d2 d d2 d d2 d2 d2 d4
+%%MIDI drum +: 64 62 62 62 62 64 64 62
+%%MIDI drum +: 90 70 70 70 70 90 90 70
+[P:A]
+|: AGGF FEFG  |
+AGGF FE D2    |
+AGGF FEFG     |
+A3   A ^GB A2 |   $
+AGGF FEFG     |
+AGGF FE D2    |
+EFGA FGEF     |
+D8            ::  $
+[P:B]
+A,DFA ^G2 A2 |
+^G2 A2 GA F2 :|
+A,DFA ^G2 A2 |
+^G2 A2 GA F2 |
+=c>B AB A^GAF |
+^GA F6 |:  $
+[P:C]
+=c>B AB A^GAB |
+=c/d/c/B/ AB A^GAB |
+=c/d/c/B/ AB A^GAF |
+^GA F6 :|   $
+{/^G} A8- |
+A8 ||
+[P:D]
+S A4 _B4 |
+A4 ^G4 |
+A4 _B4 |
+A4 ^G4 |   $
+A2 c2 _B2 c2 |
+A2 _B2 ^G2 FG |
+A2 z4 (3_BA^G |
+A2 z4 (3_BA^G |   $
+A2 (3_BA^G A2 (3BAG |
+A2 z4 (3_BA^G |
+F2 (3_BA^G F2 (3BAG |
+A8 |:  $
+[P:E]
+FGFE D2 E2 |
+F2 G2 ABAG |
+FGFE DEFG |1
+AFGE F>E"_Fine" D2 :|2
+AFGE D2 ^G2 ||   $
+[P:F]
+A8 |
+z2 F2 G2 ^G2 |
+A2 F,2 G,2 ^G,2 |
+A,2 F2 G2 ^G2 |
+A2 F,2 G,2 ^G,2 |   $
+A,2 A_B A^G A2 |
+z2 A,_B, A,^G, A,2 |
+z2 c_B A^G A2 |
+z2 C_B, A,^G,"_D.S. al Fine" A,2 |]

@@ -58,17 +58,6 @@ function applyScoreRenderSelectionToFocusPlan(result, selection, mapRenderOffset
 function resolveFocusMeasureNumberAtRenderOffset(measureIndex, renderOffset) {
   const target = Number(renderOffset);
   if (!measureIndex || !Number.isFinite(target)) return null;
-  const starts = Array.isArray(measureIndex.istarts)
-    ? Array.from(new Set(measureIndex.istarts.map(Number).filter(Number.isFinite))).sort((a, b) => a - b)
-    : [];
-  if (starts.length) {
-    const firstAfter = starts.findIndex((start) => start > target);
-    let index = firstAfter < 0 ? starts.length - 1 : firstAfter - 1;
-    if (index < 0) index = 0;
-    const anchor = Number.isInteger(measureIndex.anchor) ? measureIndex.anchor : 0;
-    return Math.max(1, index - anchor + 1);
-  }
-
   const byNumber = measureIndex.byNumber;
   let best = null;
   let first = null;
@@ -86,6 +75,17 @@ function resolveFocusMeasureNumberAtRenderOffset(measureIndex, renderOffset) {
   }
   if (best) return best.number;
   if (first) return first.number;
+
+  const starts = Array.isArray(measureIndex.istarts)
+    ? Array.from(new Set(measureIndex.istarts.map(Number).filter(Number.isFinite))).sort((a, b) => a - b)
+    : [];
+  if (starts.length) {
+    const firstAfter = starts.findIndex((start) => start > target);
+    let index = firstAfter < 0 ? starts.length - 1 : firstAfter - 1;
+    if (index < 0) index = 0;
+    const anchor = Number.isInteger(measureIndex.anchor) ? measureIndex.anchor : 0;
+    return Math.max(1, index - anchor + 1);
+  }
 
   return null;
 }

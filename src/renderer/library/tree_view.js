@@ -1,5 +1,6 @@
 const LIBRARY_TUNE_DRAG_MIME = "application/x-abcarus-tune-id";
 const LIBRARY_CATEGORY_DRAG_MIME = "application/x-abcarus-library-category";
+const LIBRARY_TOOLTIP_DELAY_MS = 1400;
 
 function libraryPathBasename(filePath) {
   return String(filePath || "").split(/[\\/]/).pop() || "";
@@ -117,6 +118,7 @@ function createLibraryTreeView({
   sortTunes = (tunes) => tunes,
   getEntryTuneCount = () => 0,
   isRichTooltipEnabled = () => true,
+  getRichTooltipDelayMs = () => LIBRARY_TOOLTIP_DELAY_MS,
   getRenamingFilePath = () => "",
   setRenamingFilePath = () => {},
   getActiveFilePath = () => "",
@@ -124,6 +126,7 @@ function createLibraryTreeView({
   getActiveEditorFilePath = () => "",
   getActiveTuneId = () => "",
   getActiveTuneUid = () => "",
+  isTuneFavorite = () => false,
   isPayloadMode = () => false,
   isRawMode = () => false,
   pathsEqual = (a, b) => String(a || "") === String(b || ""),
@@ -145,6 +148,8 @@ function createLibraryTreeView({
   let pendingRenderFiles = null;
   let dragTuneId = "";
   let dragCategory = null;
+  let richTooltipTimer = null;
+  let richTooltipTarget = null;
   const richTooltip = createLibraryTooltip(documentRef);
 
   function showRichTooltip(target, text) {
@@ -169,7 +174,38 @@ function createLibraryTreeView({
   }
 
   function hideRichTooltip() {
+    if (richTooltipTimer != null) {
+      clearTimeout(richTooltipTimer);
+      richTooltipTimer = null;
+    }
+    richTooltipTarget = null;
     if (richTooltip) richTooltip.hidden = true;
+  }
+
+  function scheduleRichTooltip(target, text) {
+    if (!isRichTooltipEnabled() || !richTooltip || !target || !text) return;
+    if (richTooltipTarget === target) return;
+    hideRichTooltip();
+    richTooltipTarget = target;
+    const configuredDelay = Number(getRichTooltipDelayMs());
+    const delay = Number.isFinite(configuredDelay)
+      ? Math.max(0, Math.min(5000, configuredDelay))
+      : LIBRARY_TOOLTIP_DELAY_MS;
+    richTooltipTimer = setTimeout(() => {
+      richTooltipTimer = null;
+      if (richTooltipTarget !== target || !isRichTooltipEnabled()) return;
+      showRichTooltip(target, text);
+    }, delay);
+  }
+
+  if (treeElement) {
+    treeElement.addEventListener("scroll", hideRichTooltip, { passive: true });
+    treeElement.addEventListener("mousedown", hideRichTooltip);
+  }
+  if (windowRef) {
+    windowRef.addEventListener("keydown", (event) => {
+      if (event && event.key === "Escape") hideRichTooltip();
+    });
   }
 
   function schedule(files = null) {
@@ -321,7 +357,7 @@ function createLibraryTreeView({
         fileLabel.setAttribute("aria-label", entryTooltip);
         fileLabel.addEventListener("mouseenter", () => {
           showHoverStatus(entryTooltip);
-          showRichTooltip(fileLabel, entryTooltip);
+          scheduleRichTooltip(fileLabel, entryTooltip);
         });
         fileLabel.addEventListener("mouseleave", () => {
           restoreHoverStatus();
@@ -329,7 +365,7 @@ function createLibraryTreeView({
         });
         fileLabel.addEventListener("focus", () => {
           showHoverStatus(entryTooltip);
-          showRichTooltip(fileLabel, entryTooltip);
+          scheduleRichTooltip(fileLabel, entryTooltip);
         });
         fileLabel.addEventListener("blur", () => {
           restoreHoverStatus();
@@ -412,9 +448,18 @@ function createLibraryTreeView({
         const composer = tune.composer ? ` - ${tune.composer}` : "";
         const key = tune.key ? ` - ${tune.key}` : "";
         const tuneLabel = `${labelNumber}: ${title}${composer}${key}`.trim();
-        button.textContent = tuneLabel;
+        const favorite = Boolean(isTuneFavorite(tune.id));
+        const favoriteMarker = documentRef.createElement("span");
+        favoriteMarker.className = "tune-favorite-marker";
+        favoriteMarker.textContent = "★";
+        favoriteMarker.setAttribute("aria-hidden", "true");
+        if (!favorite) favoriteMarker.classList.add("empty");
+        const labelText = documentRef.createElement("span");
+        labelText.className = "tune-label-content";
+        labelText.textContent = tuneLabel;
+        button.append(favoriteMarker, labelText);
         const tuneTooltip = buildTuneTooltip(tune, tuneLabel, entry.isFile ? entry.id : "");
-        button.setAttribute("aria-label", tuneTooltip);
+        button.setAttribute("aria-label", favorite ? `${tuneTooltip}\nFavorite: Yes` : tuneTooltip);
         button.dataset.tuneId = tune.id;
         if (tune.tuneUid) button.dataset.tuneUid = tune.tuneUid;
         const activeTuneUid = getActiveTuneUid();
@@ -424,7 +469,7 @@ function createLibraryTreeView({
         if (isActiveByUid || isActiveById) button.classList.add("active");
         button.addEventListener("mouseenter", () => {
           showHoverStatus(tuneTooltip);
-          showRichTooltip(button, tuneTooltip);
+          scheduleRichTooltip(button, tuneTooltip);
         });
         button.addEventListener("mouseleave", () => {
           restoreHoverStatus();
@@ -432,7 +477,7 @@ function createLibraryTreeView({
         });
         button.addEventListener("focus", () => {
           showHoverStatus(tuneTooltip);
-          showRichTooltip(button, tuneTooltip);
+          scheduleRichTooltip(button, tuneTooltip);
         });
         button.addEventListener("blur", () => {
           restoreHoverStatus();
@@ -550,4 +595,5 @@ export {
   buildGroupTooltip,
   buildTuneTooltip,
   createLibraryTreeView,
+  LIBRARY_TOOLTIP_DELAY_MS,
 };

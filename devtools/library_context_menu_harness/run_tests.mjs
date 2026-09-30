@@ -58,6 +58,7 @@ const windowRef = {
 let expandCalls = 0;
 let collapseCalls = 0;
 const reorderCalls = [];
+const favoriteCalls = [];
 let generateSkeletonCalls = 0;
 const clipboardWrites = [];
 const contextTunes = [
@@ -80,6 +81,8 @@ const contextMenu = createLibraryContextMenu({
     tune: contextTunes.find((tune) => tune.id === tuneId),
   }),
   reorderTune: async (tuneId, options) => { reorderCalls.push([tuneId, options]); },
+  isTuneFavorite: (tuneId) => tuneId === "/music/a.abc::1",
+  toggleTuneFavorite: async (tuneId) => { favoriteCalls.push(tuneId); },
   generateBlankVoiceSkeleton: () => { generateSkeletonCalls += 1; },
 });
 contextMenu.init();
@@ -116,6 +119,14 @@ assert.equal(collapseCalls, 1);
 contextMenu.show(10, 10, { type: "editor" });
 await clickAction("editorGenerateBlankVoiceSkeleton");
 assert.equal(generateSkeletonCalls, 1, "editor context menu must expose voice skeleton generation");
+
+contextMenu.show(10, 10, { type: "tune", tuneId: "/music/a.abc::1" });
+assert.ok(menuElement.children.some((item) => item.textContent === "Remove from Favorites"));
+await clickAction("toggleFavorite");
+assert.deepEqual(favoriteCalls, ["/music/a.abc::1"]);
+
+contextMenu.show(10, 10, { type: "tune", tuneId: "/music/a.abc::0" });
+assert.ok(menuElement.children.some((item) => item.textContent === "Add to Favorites"));
 
 contextMenu.show(10, 10, { type: "tune", tuneId: "/music/a.abc::1" });
 await clickAction("copyTuneReference");

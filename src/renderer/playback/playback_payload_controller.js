@@ -1,4 +1,5 @@
 import {
+  buildIsolatedSelectionPlaybackText,
   stripGchordDirectives,
   stripRepeatsLengthSafe,
 } from "./selection_playback_model.js";
@@ -114,8 +115,13 @@ function createPlaybackPayloadController({
     }
 
     if (selectionRuntime.isSelectionMode()) {
-      const prefixPayload = buildHeaderPrefix(isChordProActive() ? "" : getActiveEntryHeader(), false, tuneText);
-      const baseText = composeHeaderPrefixPayload(prefixPayload, tuneText);
+      const range = transport.playbackRange || {};
+      const isolated = buildIsolatedSelectionPlaybackText(tuneText, range.startOffset, range.endOffset);
+      // buildHeaderPrefix may carry a rewritten tuneText in its result. It must
+      // receive the isolated body, otherwise composeHeaderPrefixPayload restores
+      // the original full tune and defeats selection playback entirely.
+      const prefixPayload = buildHeaderPrefix(isChordProActive() ? "" : getActiveEntryHeader(), false, isolated.text);
+      const baseText = composeHeaderPrefixPayload(prefixPayload, isolated.text);
       const injected = skipGchords
         ? { text: baseText, changed: false, offsetDelta: 0 }
         : injectGchordOn(baseText, prefixPayload.offset || 0);
@@ -125,7 +131,7 @@ function createPlaybackPayloadController({
       transport.clearPreparedPlaybackKey();
       return {
         text,
-        offset: (prefixPayload.offset || 0) + (injected.offsetDelta || 0),
+        offset: (prefixPayload.offset || 0) + isolated.offset + (injected.offsetDelta || 0),
         lineOffset,
       };
     }

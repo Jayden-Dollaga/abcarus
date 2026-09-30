@@ -401,7 +401,7 @@ export function createFocusModeController({
       focusScoreRenderSelection = null;
     }
     transport.playbackLoopEnabled = Boolean(settings.playbackLoopEnabled);
-    transport.playbackLoopGapMs = Math.max(0, Math.min(5000, Math.round(Number(settings.playbackLoopGapMs) || 0)));
+    transport.playbackLoopGapMs = 0;
     transport.playbackLoopFromMeasure = nextFrom;
     transport.playbackLoopToMeasure = nextTo;
     transport.playbackLoopTuneId = (typeof settings.playbackLoopTuneId === "string") ? settings.playbackLoopTuneId : null;

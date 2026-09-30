@@ -803,7 +803,7 @@ body.library-hidden .divider {
 .sidebar-control.sidebar-search {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) var(--button-height);
+  grid-template-columns: auto minmax(0, 1fr) var(--button-height) var(--button-height);
   grid-template-rows: var(--button-height);
   align-items: center;
   gap: 6px;
@@ -845,8 +845,23 @@ body.library-hidden .divider {
   box-sizing: border-box;
 }
 
-#btnLibraryClearFilter {
+#btnLibraryFavorites {
   grid-column: 3;
+  grid-row: 1;
+  width: var(--button-height);
+  min-width: var(--button-height);
+  padding: 0;
+  justify-content: center;
+}
+
+#btnLibraryFavorites.toggle-active:not(:disabled) {
+  background: #111;
+  color: #fff;
+  border-color: #111;
+}
+
+#btnLibraryClearFilter {
+  grid-column: 4;
   grid-row: 1;
   width: var(--button-height);
   min-width: var(--button-height);
@@ -1130,7 +1145,26 @@ body.resizing * {
 }
 
 .tree-label.tune-label {
-  display: block;
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.tune-favorite-marker {
+  color: #a15c00;
+  font-size: 11px;
+  line-height: 1;
+  text-align: center;
+}
+
+.tune-favorite-marker.empty {
+  visibility: hidden;
+}
+
+.tune-label-content {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2060,6 +2094,11 @@ svg {
   cursor: pointer;
 }
 
+.score-annotation-hl {
+  fill-opacity: 0;
+  pointer-events: none;
+}
+
 .note-hl.note-on {
   fill-opacity: 0.45;
 }
@@ -2110,8 +2149,11 @@ svg {
 }
 
 .svg-playhead-line {
+  display: none !important;
+  visibility: hidden !important;
   fill: var(--abcarus-follow-color, #1e90ff);
-  fill-opacity: var(--abcarus-follow-playhead-opacity, 0.7);
+  fill-opacity: 0 !important;
+  stroke: none !important;
   shape-rendering: crispEdges;
 }
 

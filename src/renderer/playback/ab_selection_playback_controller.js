@@ -17,6 +17,7 @@ function createAbSelectionPlaybackController({
   parseMutedVoiceSetting,
   hasIntentionalSelectionPlaybackSpan,
   hasRepeatTokensInSlice,
+  isWholeTuneMusicRange,
   buildSelectionPlaybackToast,
   globalObject = globalThis,
 } = {}) {
@@ -84,7 +85,7 @@ function createAbSelectionPlaybackController({
       : null;
     return {
       loop: (loopFromUi != null) ? loopFromUi : Boolean(settings.playbackSelectionLoopEnabled),
-      loopGapMs: Math.max(0, Math.min(5000, Math.round(Number(settings.playbackLoopGapMs) || 0))),
+      loopGapMs: 0,
       suppressRepeats: (suppressFromUi != null) ? suppressFromUi : (settings.playbackSelectionSuppressRepeats !== false),
       muteGchords: (gchordsFromUi != null) ? !gchordsFromUi : Boolean(settings.playbackSelectionMuteGchords),
       allowMidiDrums: (drumsFromUi != null) ? drumsFromUi : Boolean(settings.playbackSelectionAllowMidiDrums),
@@ -207,6 +208,23 @@ function createAbSelectionPlaybackController({
       && typeof hasIntentionalSelectionPlaybackSpan === "function"
       && !hasIntentionalSelectionPlaybackSpan(text, start, end)
     ) return false;
+    if (typeof isWholeTuneMusicRange === "function" && isWholeTuneMusicRange(text, start, end)) {
+      setPlaybackRange({
+        startOffset: 0,
+        endOffset: null,
+        origin: "transport",
+        loop: selectionSettings.loop,
+        loopGapMs: selectionSettings.loopGapMs,
+      });
+      await startPlaybackFromRange({
+        startOffset: 0,
+        endOffset: null,
+        origin: "transport",
+        loop: selectionSettings.loop,
+        loopGapMs: selectionSettings.loopGapMs,
+      });
+      return true;
+    }
     selectionPlaybackRuntime.captureSelection(sel);
     if (selectionSettings.mutedVoices && selectionSettings.mutedVoices.length) {
       selectionPlaybackRuntime.setAbMutedVoiceIds(selectionSettings.mutedVoices);

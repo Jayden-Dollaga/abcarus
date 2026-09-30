@@ -25,6 +25,9 @@ const { createRenderRuntime } = await importBundledModule(
 const { createScoreInteractionController } = await importBundledModule(
   "src/renderer/render/score_interaction_controller.js",
 );
+const { createScoreMeasureSelectionController } = await importBundledModule(
+  "src/renderer/render/score_measure_selection_controller.js",
+);
 const { createHeaderLayersController } = await importBundledModule(
   "src/renderer/render/header_layers_controller.js",
 );
@@ -159,6 +162,46 @@ const { createHeaderLayersController } = await importBundledModule(
 }
 
 {
+  const attr = (values) => ({
+    getAttribute: (name) => values[name] == null ? null : String(values[name]),
+  });
+  const bars = [
+    attr({ x: 0, y: 10, width: 2, height: 20, "data-start": 100, "data-end": 101 }),
+    attr({ x: 100, y: 10, width: 2, height: 20, "data-start": 190, "data-end": 191 }),
+  ];
+  const svg = { querySelectorAll: (selector) => selector === ".bar-hl" ? bars : [] };
+  const makeNote = (start, x) => ({
+    ...attr({ x, y: 10, width: 10, height: 20, "data-start": start, "data-end": start + 1 }),
+    ownerSVGElement: svg,
+    classList: { contains: (name) => name === "note-hl" },
+  });
+  const firstNote = makeNote(120, 20);
+  const middleNote = makeNote(150, 60);
+  const output = {
+    querySelectorAll(selector) {
+      if (selector === "svg") return [svg];
+      if (selector === ".note-hl[data-start]") return [firstNote, middleNote];
+      return [];
+    },
+  };
+  const controller = createScoreMeasureSelectionController({ outputElement: output });
+  controller.rebuildIndex();
+  assert.deepEqual(
+    controller.measureAtPoint(0, 0, middleNote),
+    {
+      svg,
+      playStart: 120,
+      playEnd: 191,
+      x: 1,
+      y: 10,
+      width: 100,
+      height: 20,
+    },
+    "double-clicking any note must select the complete containing measure",
+  );
+}
+
+{
   const listeners = new Map();
   const note = {
     getBoundingClientRect: () => ({ top: 250, left: 350, width: 20, height: 10 }),
@@ -219,6 +262,69 @@ const { createHeaderLayersController } = await importBundledModule(
   assert.equal(typeof listeners.get("dblclick"), "function");
   assert.equal(typeof listeners.get("abcarus:score-rendered"), "function");
   assert.equal(typeof listeners.get("abcarus:focus-selection-changed"), "function");
+}
+
+{
+  const listeners = new Map();
+  const svg = { querySelectorAll: () => [] };
+  const makeNote = (start, end, x) => ({
+    ownerSVGElement: svg,
+    classList: { contains: (name) => name === "note-hl" },
+    getAttribute(name) {
+      return {
+        x: String(x),
+        y: "10",
+        width: "10",
+        height: "10",
+        "data-start": String(start),
+        "data-end": String(end),
+      }[name] ?? null;
+    },
+  });
+  const output = {
+    addEventListener: (type, handler) => listeners.set(type, handler),
+    querySelectorAll: () => [],
+  };
+  const selections = [];
+  let clearedPlaybackPosition = 0;
+  let playbackBusy = true;
+  let stoppedForRangeEdit = 0;
+  const controller = createScoreInteractionController({
+    outputElement: output,
+    mapEditorOffsetToRenderIdx: (value) => value + 100,
+    mapRenderIdxToEditorOffset: (value) => value - 100,
+    setEditorSelectionRange: (start, end) => selections.push([start, end]),
+    setPendingPlaybackRangeOrigin: () => {},
+    clearPlaybackPositionHighlight: () => { clearedPlaybackPosition += 1; },
+    isPlaybackBusy: () => playbackBusy,
+    stopPlaybackForRangeEdit: () => {
+      stoppedForRangeEdit += 1;
+      playbackBusy = false;
+    },
+    getPlaybackRange: () => ({ loop: true }),
+    setPlaybackRange: () => {},
+  });
+  controller.wireOutputSelection();
+  controller.handleOutputDoubleClick({ target: makeNote(120, 125, 10), preventDefault() {} });
+  assert.equal(stoppedForRangeEdit, 1, "starting a score range must stop active playback before changing it");
+  assert.equal(clearedPlaybackPosition, 1, "starting a score range must clear the stale playback position");
+  listeners.get("abcarus:editor-playback-scope")({ detail: { startOffset: 20, endOffset: 25 } });
+  controller.handleOutputDoubleClick({ target: makeNote(180, 185, 80), preventDefault() {} });
+  assert.equal(stoppedForRangeEdit, 1, "completing a range must not stop an already stopped transport again");
+  assert.deepEqual(
+    selections,
+    [[20, 25], [20, 85]],
+    "editor feedback must not turn the second score double-click into a new range start",
+  );
+
+  controller.handleOutputDoubleClick({ target: makeNote(220, 225, 120), preventDefault() {} });
+  listeners.get("abcarus:score-rendered")();
+  controller.handleOutputDoubleClick({ target: makeNote(260, 265, 160), preventDefault() {} });
+  assert.deepEqual(
+    selections.slice(-2),
+    [[120, 125], [160, 165]],
+    "a score rerender must discard an unfinished double-click anchor",
+  );
 }
 
 console.log("render domain harness: all tests passed");

@@ -233,12 +233,19 @@ function createPlaybackFollowController({
       const noteEls = findNearestNoteHighlightElements(renderIdx, 240);
       const chosen = noteEls.length ? pickClosestNoteElement(noteEls) : null;
       if (chosen) {
+        lastPlaybackNoteOnEls = Array.from(noteEls);
+        for (const element of lastPlaybackNoteOnEls) {
+          try { element.classList.add("note-on"); } catch {}
+        }
         const chosenRenderIdx = extractRenderIdxFromElementClass(chosen);
         const chosenEditorIdx = Number.isFinite(chosenRenderIdx)
           ? Math.max(0, mapRenderIdxToEditorOffset(chosenRenderIdx))
           : editorIdx;
         const nearestBar = findNearestBarElForNote(chosen);
-        setSvgPlayheadFromElements(chosen, nearestBar);
+        // The moving measure highlight is the playback indication. The narrow
+        // playhead line is intentionally not created: it was visually confused
+        // with a selection boundary and could survive asynchronous UI updates.
+        clearSvgPlayhead();
         highlightSvgFollowMeasureForNote(chosen, nearestBar);
         const now = nowMs();
         if (now - lastPlaybackUiScrollAt > 90) {

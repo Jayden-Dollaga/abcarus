@@ -18,7 +18,7 @@ try {
   run(npmCommand, ["audit", "--omit=dev", "--audit-level=high"]);
   run(npmCommand, ["run", "-s", "thirdparty:review"]);
   run(npmCommand, ["run", "-s", "pbs:check"]);
-  for (const script of ["test:ui-smoke", "test:ui-playback-smoke", "test:ui-payload-smoke", "test:ui-transform-keys-smoke"]) {
+  for (const script of ["test:ui-smoke", "test:ui-playback-smoke", "test:ui-payload-smoke", "test:ui-transform-keys-smoke", "test:ui-score-selection-smoke"]) {
     run(npmCommand, ["run", "-s", script], { env: smokeEnv });
   }
   console.log("Release preflight passed.");

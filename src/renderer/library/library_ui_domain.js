@@ -61,6 +61,7 @@ function createLibraryUiDomain({
   let libraryFilterLabel = "";
   let libraryTextFilter = "";
   let richTooltipsEnabled = true;
+  let richTooltipDelayMs = 1400;
 
   const viewStore = createLibraryViewStore({
     getIndex: () => (typeof state.getLibraryIndex === "function" ? state.getLibraryIndex() : null),
@@ -359,6 +360,7 @@ function createLibraryUiDomain({
     sortTunes: (tunes) => uiStateController.sortTunes(tunes, uiStateController.getTuneSortMode()),
     getEntryTuneCount,
     isRichTooltipEnabled: () => richTooltipsEnabled,
+    getRichTooltipDelayMs: () => richTooltipDelayMs,
     getRenamingFilePath: () => renameFileController.getRenamingFilePath(),
     setRenamingFilePath: (value) => renameFileController.setRenamingFilePath(value),
     getActiveFilePath: () => (typeof state.getActiveFilePath === "function" ? state.getActiveFilePath() : ""),
@@ -368,6 +370,7 @@ function createLibraryUiDomain({
     getActiveEditorFilePath: actions.getActiveEditorFilePath,
     getActiveTuneId: () => (typeof state.getActiveTuneId === "function" ? state.getActiveTuneId() : ""),
     getActiveTuneUid: () => (typeof state.getActiveTuneUid === "function" ? state.getActiveTuneUid() : ""),
+    isTuneFavorite: actions.isTuneFavorite,
     isPayloadMode: state.isPayloadMode,
     isRawMode: state.isRawMode,
     pathsEqual,
@@ -435,6 +438,8 @@ function createLibraryUiDomain({
     openMoveTuneModal,
     reorderTune,
     addTuneToSetList: actions.addTuneToSetList,
+    isTuneFavorite: actions.isTuneFavorite,
+    toggleTuneFavorite: actions.toggleTuneFavorite,
     copyFileTuneList: actions.copyFileTuneList,
     appendTuneToActiveFile: (tuneId) => appendTuneToActiveFileAction.run(tuneId),
     buildTemplatesPreviewContextMenuItems: actions.buildTemplatesPreviewContextMenuItems,
@@ -514,6 +519,7 @@ function createLibraryUiDomain({
   function invalidateView() {
     viewStore.invalidate();
     scheduleRenderLibraryTree();
+    if (typeof actions.onLibraryIndexChanged === "function") actions.onLibraryIndexChanged();
     if (documentRef && documentRef.body && documentRef.body.classList.contains("library-list-open")) {
       updateModalRows();
     }
@@ -521,13 +527,28 @@ function createLibraryUiDomain({
 
   function applyLibraryPrefsFromSettings(settings) {
     richTooltipsEnabled = !(settings && settings.libraryRichTooltips === false);
+    const configuredDelay = Number(settings && settings.libraryRichTooltipDelayMs);
+    richTooltipDelayMs = Number.isFinite(configuredDelay)
+      ? Math.max(0, Math.min(5000, configuredDelay))
+      : 1400;
     uiStateController.applyLibraryPrefsFromSettings(settings);
     uiStateController.syncControls({ groupBy, sortBy, sortTunesBy });
   }
 
   function clearLibraryFilter() {
+    const previousLabel = libraryFilterLabel;
     libraryFilter = null;
     libraryFilterLabel = "";
+    scheduleRenderLibraryTree();
+    if (typeof actions.updateLibraryStatus === "function") actions.updateLibraryStatus();
+    if (previousLabel && typeof actions.onLibraryFilterCleared === "function") {
+      actions.onLibraryFilterCleared(previousLabel);
+    }
+  }
+
+  function setLibraryFilter(files, label = "") {
+    libraryFilter = Array.isArray(files) ? files : [];
+    libraryFilterLabel = String(label || "");
     scheduleRenderLibraryTree();
     if (typeof actions.updateLibraryStatus === "function") actions.updateLibraryStatus();
   }
@@ -611,6 +632,7 @@ function createLibraryUiDomain({
     restoreLibraryTuneSelection: (selection) => uiStateController.restoreLibraryTuneSelection(selection),
     scheduleSaveLibraryPrefs: (patch) => uiStateController.scheduleSaveLibraryPrefs(patch),
     scheduleSaveLibraryUiState: () => uiStateController.scheduleSaveLibraryUiState(),
+    setLibraryFilter,
     setPrefsWriteSuppressed: (value) => uiStateController.setPrefsWriteSuppressed(value),
     shellController,
     treeView,
