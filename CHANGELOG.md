@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
+## [1.11.3] - 2026-09-30
 ### Added
 - Favorites are visible in Library, can be filtered and managed from tune actions, and are covered by the shared Desktop/Mobile synchronization contract.
 - Library rows can show delayed, configurable metadata tooltips; the default delay is 1400 ms.
@@ -15,7 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Selection playback stops stale playback highlighting before starting a newly selected range and keeps playback-follow highlights synchronized with the active range.
 - UI smoke coverage now waits for the first actual note event of a new playback run instead of accepting a delayed event from the previous run.
-
 
 ## [1.11.2] - 2026-09-22
 ### Changed
