@@ -6,9 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+
+## [1.11.4] - 2026-10-01
 ### Fixed
 - Linux AppImage desktop metadata now includes a short description, so AppImageHub can explain ABCarus in its application list.
-
 
 ## [1.11.3] - 2026-09-30
 ### Added
