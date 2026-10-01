@@ -97,6 +97,7 @@ cat > "${appdir}/${desktop_id}.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=ABCarus
+Comment=Edit, render, and play ABC notation
 Exec=${app_name}
 Icon=${app_name}
 Categories=AudioVideo;Audio;Music;
