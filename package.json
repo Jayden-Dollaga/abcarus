@@ -102,6 +102,8 @@
     "test:renderer-boundaries": "node devtools/renderer_boundaries_harness/run_tests.mjs",
     "test:ui-smoke": "node scripts/ui_smoke.mjs",
     "test:ui-playback-smoke": "node scripts/ui_smoke.mjs --playback",
+    "test:ui-loop-cycle-smoke": "node scripts/ui_smoke.mjs --loop-cycle",
+    "test:ui-count-in-scroll-smoke": "node scripts/ui_smoke.mjs --count-in-scroll",
     "test:ui-payload-smoke": "node scripts/ui_smoke.mjs --payload",
     "test:ui-transform-keys-smoke": "node scripts/ui_smoke.mjs --transform-keys",
     "test:ui-score-selection-smoke": "node scripts/ui_smoke.mjs --score-selection=devtools/playback_domain_harness/fixtures/sectional_end_selection.abc --score-selection-range=1-8 && node scripts/ui_smoke.mjs --score-selection=devtools/playback_domain_harness/fixtures/sectional_end_selection.abc --score-selection-range=19-28 && node scripts/ui_smoke.mjs --score-selection=devtools/playback_domain_harness/fixtures/sectional_end_selection.abc --score-selection-range=19-32 && node scripts/ui_smoke.mjs --score-selection=devtools/playback_domain_harness/fixtures/sectional_end_selection.abc --score-selection-range=33-36 && node scripts/ui_smoke.mjs --score-selection=devtools/playback_domain_harness/fixtures/sectional_end_selection.abc --score-selection-range=37-45",

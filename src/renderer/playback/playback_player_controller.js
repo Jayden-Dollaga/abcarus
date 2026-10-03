@@ -26,6 +26,31 @@ function createPlaybackPlayerController({
   schedulePlaybackUiUpdate,
   logErr,
 } = {}) {
+  let warmedPlaybackState = null;
+  let warmedSoundfontSource = null;
+  let warmupSession = null;
+  let suppressWarmupEnd = false;
+
+  function finishWarmup({ warmed = true, stop = false } = {}) {
+    const session = warmupSession;
+    if (!session) return;
+    warmupSession = null;
+    if (session.timer != null) windowRef.clearTimeout(session.timer);
+    if (stop && transport.player && typeof transport.player.stop === "function") {
+      suppressWarmupEnd = true;
+      try { transport.player.stop(); } catch {}
+      suppressWarmupEnd = false;
+    }
+    if (transport.player && typeof transport.player.set_vol === "function") {
+      try { transport.player.set_vol(session.volume); } catch {}
+    }
+    if (warmed) {
+      warmedPlaybackState = session.playbackState;
+      warmedSoundfontSource = session.soundfontSource;
+    }
+    session.resolve(Boolean(warmed));
+  }
+
   function ensurePlayer() {
     if (transport.player) return transport.player;
 
@@ -35,6 +60,13 @@ function createPlaybackPlayerController({
 
     const conf = {
       onend: () => {
+        if (suppressWarmupEnd) return;
+        if (warmupSession) {
+          // Tear down the muted gain node before restoring the user's volume.
+          // Restoring it on the same node can expose the warmed note's release.
+          finishWarmup({ warmed: true, stop: true });
+          return;
+        }
         const endState = transport.consumePlaybackEnd();
         if (endState.ignored) return;
         setStatus("OK");
@@ -71,11 +103,12 @@ function createPlaybackPlayerController({
                 endOffset: plan.rangeEnd,
                 origin: getFocusModeEnabled() ? "focus" : "transport",
                 loop: plan.loopEnabled,
+                skipCountIn: true,
               }).catch(() => {});
               updatePracticeUi();
               return;
             }
-            startPlaybackFromRange(endState.loopRange).catch(() => {});
+            startPlaybackFromRange({ ...endState.loopRange, skipCountIn: true }).catch(() => {});
           }, gapMs);
         }
         if (!endState.shouldLoop && endState.wasSelectionOrigin) {
@@ -84,6 +117,7 @@ function createPlaybackPlayerController({
         }
       },
       onnote: (i, on) => {
+        if (warmupSession) return;
         transport.lastPlaybackIdx = i;
         if (transport.consumeFirstNoteStart(on)) {
           setStatus("Playing…");
@@ -190,8 +224,102 @@ function createPlaybackPlayerController({
     return transport.player;
   }
 
+  function warmupPlayback(startSymbol) {
+    const playbackState = transport.playbackState;
+    const soundfontSource = String(getSoundfontSource() || "");
+    if (!playbackState || !startSymbol) return Promise.resolve(false);
+    if (warmedPlaybackState === playbackState && warmedSoundfontSource === soundfontSource) {
+      return Promise.resolve(true);
+    }
+    if (warmupSession) return warmupSession.promise;
+
+    const player = ensurePlayer();
+    if (!player || typeof player.play !== "function" || typeof player.set_vol !== "function") {
+      return Promise.resolve(false);
+    }
+    let volume = 0.7;
+    try {
+      const current = Number(player.set_vol());
+      if (Number.isFinite(current)) volume = current;
+      player.set_vol(0);
+    } catch {
+      return Promise.resolve(false);
+    }
+
+    let resolveWarmup;
+    const promise = new Promise((resolve) => { resolveWarmup = resolve; });
+    warmupSession = {
+      playbackState,
+      soundfontSource,
+      volume,
+      resolve: resolveWarmup,
+      promise,
+      timer: null,
+    };
+    warmupSession.timer = windowRef.setTimeout(() => {
+      finishWarmup({ warmed: false, stop: true });
+    }, 15000);
+    try {
+      const playableEntry = Array.isArray(playbackState.symbols)
+        ? playbackState.symbols.find(({ symbol }) => (
+          symbol
+          && !symbol.noplay
+          && Number.isFinite(symbol.dur)
+          && symbol.dur > 0
+          && Array.isArray(symbol.notes)
+          && symbol.notes.some((note) => note && !note.noplay && Number.isFinite(note.midi))
+        ))
+        : null;
+      const source = playableEntry && playableEntry.symbol ? playableEntry.symbol : startSymbol;
+      const warmupEnd = {
+        type: -1,
+        dur: 0,
+        ptim: Number(source.ptim) || 0,
+        time: Number(source.time) || 0,
+        v: source.v,
+        p_v: source.p_v,
+        seqst: true,
+        ts_next: null,
+      };
+      const warmupStart = {
+        ...source,
+        ts_prev: null,
+        ts_next: warmupEnd,
+      };
+      // A warmup must never enter the tune's P:/repeat routing graph.
+      delete warmupStart.parts;
+      delete warmupStart.part;
+      delete warmupStart.part1;
+      delete warmupStart.rep_p;
+      delete warmupStart.rep_s;
+      delete warmupStart.rep_v;
+      if (source.p_v) {
+        const warmupVoice = { ...source.p_v };
+        let voiceHead = null;
+        let voiceTail = null;
+        for (let item = source.p_v.sym, guard = 0; item && item !== source && guard < 200000; item = item.next, guard += 1) {
+          if (item.subtype !== "midictl" && item.subtype !== "midiprog") continue;
+          const control = { ...item, p_v: warmupVoice, prev: voiceTail, next: null };
+          if (voiceTail) voiceTail.next = control;
+          else voiceHead = control;
+          voiceTail = control;
+        }
+        warmupStart.p_v = warmupVoice;
+        warmupEnd.p_v = warmupVoice;
+        warmupVoice.sym = voiceHead || warmupStart;
+        if (voiceTail) voiceTail.next = warmupStart;
+      }
+      warmupEnd.ts_prev = warmupStart;
+      player.play(warmupStart, warmupEnd, 0, false);
+    } catch {
+      finishWarmup({ warmed: false, stop: true });
+    }
+    return promise;
+  }
+
   return {
     ensurePlayer,
+    warmupPlayback,
   };
 }
 

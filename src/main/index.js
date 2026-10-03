@@ -3459,10 +3459,23 @@ async function runUiSmoke(win) {
 
   if (process.env.ABCARUS_DEV_PLAYBACK_SMOKE === "1") {
     await new Promise((resolve) => setTimeout(resolve, 1800));
-    const requireFirstNote = process.env.ABCARUS_DEV_SOUNDFONT_SMOKE === "1";
+    const playbackFixture = Buffer.from(
+      String(process.env.ABCARUS_DEV_PLAYBACK_FIXTURE || ""),
+      "base64"
+    ).toString("utf8");
+    const requireFirstNote = process.env.ABCARUS_DEV_SOUNDFONT_SMOKE === "1" || Boolean(playbackFixture);
+    const countInScroll = process.env.ABCARUS_DEV_COUNT_IN_SCROLL_SMOKE === "1";
+    const loopCycle = process.env.ABCARUS_DEV_LOOP_CYCLE_SMOKE === "1";
+    const requireFixtureLoopWrap = process.env.ABCARUS_DEV_LOOP_FIXTURE_WRAP_SMOKE === "1";
+    const loopRealTime = process.env.ABCARUS_DEV_LOOP_REAL_TIME_SMOKE === "1";
     const playbackResult = await win.webContents.executeJavaScript(
       `(async () => {
         const requireFirstNote = ${requireFirstNote ? "true" : "false"};
+        const playbackFixture = ${JSON.stringify(playbackFixture)};
+        const countInScroll = ${countInScroll ? "true" : "false"};
+        const loopCycle = ${loopCycle ? "true" : "false"};
+        const requireFixtureLoopWrap = ${requireFixtureLoopWrap ? "true" : "false"};
+        const loopRealTime = ${loopRealTime ? "true" : "false"};
         const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         const waitFor = async (predicate, timeoutMs, stepMs = 100) => {
           const start = Date.now();
@@ -3489,20 +3502,31 @@ async function runUiSmoke(win) {
           debugSymbols: snap && snap.playbackDebug ? snap.playbackDebug.symbols : undefined,
           debugMeasures: snap && snap.playbackDebug ? snap.playbackDebug.measures : undefined,
           soundfont: snap ? snap.soundfont : null,
+          playbackException: snap && snap.playbackDiagnostics
+            ? snap.playbackDiagnostics.lastPlaybackException
+            : null,
         });
         const hook = window.__abcarusDevUiSmoke;
         if (!hook || typeof hook.setText !== "function" || typeof hook.snapshot !== "function") {
           return { ok: false, phase: "setup", reason: "missing-ui-hook" };
         }
-        const abc = [
+        const musicLines = loopCycle
+          ? ["C D E F | G A B c |]"]
+          : countInScroll
+          ? Array.from({ length: 20 }, (_, index) => "C D E F | G A B c | " + (index < 19 ? "$" : "|]"))
+          : [
+            "C D E F | G A B c | c B A G | F E D C |",
+            "C D E F | G A B c | c B A G | F E D C |]"
+          ];
+        const abc = playbackFixture || [
           "X:1",
           "T:UI Playback Smoke",
-          "M:4/4",
-          "L:1/4",
-          "Q:1/4=96",
+          loopCycle ? "M:1/4" : "M:4/4",
+          loopCycle ? "L:1/16" : "L:1/4",
+          loopCycle ? "Q:1/4=120" : "Q:1/4=96",
+          ...(countInScroll ? ["I:linebreak $"] : []),
           "K:C",
-          "C D E F | G A B c | c B A G | F E D C |",
-          "C D E F | G A B c | c B A G | F E D C |]"
+          ...musicLines
         ].join("\\n") + "\\n";
         hook.setText(abc);
         const rendered = await waitFor(() => {
@@ -3514,6 +3538,122 @@ async function runUiSmoke(win) {
         }
         if (typeof hook.clickPlay !== "function") {
           return { ok: false, phase: "setup", reason: "missing-click-play" };
+        }
+        if (loopCycle) {
+          const loop = document.getElementById("practiceLoopEnabled");
+          if (!loop) return { ok: false, phase: "setup", reason: "missing-loop-control" };
+          loop.checked = true;
+          loop.dispatchEvent(new Event("change", { bubbles: true }));
+          window.__abcarusPlaybackTrace = true;
+          hook.clickPlay();
+          const cycled = await waitFor(() => {
+            const trace = window.__abcarusPlaybackDebug?.getTrace?.() || [];
+            const offsets = trace.map((entry) => Number(entry.currentEditorOffset));
+            if (requireFixtureLoopWrap && !loopRealTime && window.p && typeof window.p.set_speed === "function") {
+              window.p.set_speed(20);
+            }
+            let wraps = 0;
+            for (let index = 1; index < offsets.length; index += 1) {
+              if (offsets[index] < offsets[index - 1]) wraps += 1;
+            }
+            const fullSnapshot = hook.snapshot() || {};
+            const diagnostics = fullSnapshot.playbackDiagnostics || {};
+            const expectedFirst = Number.isFinite(diagnostics.playbackFirstEditorOffset)
+              ? Number(diagnostics.playbackFirstEditorOffset)
+              : null;
+            const expectedLast = Number.isFinite(diagnostics.playbackLastEditorOffset)
+              ? Number(diagnostics.playbackLastEditorOffset)
+              : null;
+            const reachedLastAt = expectedLast == null
+              ? -1
+              : offsets.findIndex((offset) => offset >= expectedLast);
+            const completedWrap = reachedLastAt >= 0
+              && offsets.slice(reachedLastAt + 1).some((offset) => expectedFirst != null && offset <= expectedFirst);
+            return {
+              ok: playbackFixture && !requireFixtureLoopWrap ? offsets.length >= 1 : completedWrap,
+              wraps,
+              completedWrap,
+              expectedFirst,
+              expectedLast,
+              offsets,
+              snapshot: compactSnapshot(hook.snapshot()),
+            };
+          }, loopRealTime ? 180000 : (requireFixtureLoopWrap ? 30000 : 15000), 40);
+          hook.clickStop();
+          return {
+            ok: Boolean(cycled.ok),
+            phase: "loop-cycle",
+            wraps: cycled.wraps || 0,
+            completedWrap: Boolean(cycled.completedWrap),
+            expectedFirst: cycled.expectedFirst,
+            expectedLast: cycled.expectedLast,
+            offsets: (cycled.offsets || []).slice(0, 30),
+            snapshot: cycled.snapshot || compactSnapshot(hook.snapshot()),
+          };
+        }
+        if (countInScroll) {
+          if (typeof hook.patchSettings !== "function") {
+            return { ok: false, phase: "setup", reason: "missing-settings-hook" };
+          }
+          const countInSettings = {
+            playbackCountInMeasures: 1,
+            playbackCountInMode: "always",
+            playbackCountInLeadMs: 300,
+            autoScalePanes: false,
+            layoutRenderZoomHorizontal: 1,
+          };
+          if (window.api && typeof window.api.updateSettings === "function") {
+            await window.api.updateSettings(countInSettings);
+          }
+          hook.patchSettings(countInSettings);
+          const splitButton = document.querySelector('[data-split-mode="horizontal-score-top"]');
+          if (splitButton) splitButton.click();
+          await wait(250);
+          hook.patchSettings(countInSettings);
+          hook.scheduleRender();
+          await wait(4000);
+          const renderPane = document.querySelector(".render-pane");
+          if (!renderPane || renderPane.scrollHeight <= renderPane.clientHeight) {
+            return { ok: false, phase: "setup", reason: "score-not-scrollable" };
+          }
+          renderPane.scrollTop = renderPane.scrollHeight;
+          await wait(50);
+          const before = renderPane.scrollTop;
+          const startedAt = performance.now();
+          hook.clickPlay();
+          const countIn = await waitFor(() => {
+            const status = String((hook.snapshot() || {}).status || "");
+            return { ok: /Count-in/.test(status), status };
+          }, 12000, 40);
+          const during = renderPane.scrollTop;
+          const status = countIn.status || String((hook.snapshot() || {}).status || "");
+          const highlighted = Boolean(document.querySelector("#out .svg-follow-bar"));
+          const warmupMs = Math.round(performance.now() - startedAt);
+          const countInStartedAt = performance.now();
+          const firstNote = await waitFor(() => {
+            const snap = hook.snapshot() || {};
+            return {
+              ok: snap.isPlaying && !snap.waitingForFirstNote && /^Playing/.test(String(snap.status || "")),
+              status: String(snap.status || ""),
+            };
+          }, 6000, 20);
+          const countInToFirstNoteMs = Math.round(performance.now() - countInStartedAt);
+          hook.clickStop();
+          return {
+            ok: countIn.ok
+              && firstNote.ok
+              && countInToFirstNoteMs < 2900
+              && highlighted
+              && during < before,
+            phase: "count-in-scroll",
+            before,
+            during,
+            status,
+            highlighted,
+            warmupMs,
+            countInToFirstNoteMs,
+            firstNoteStatus: firstNote.status,
+          };
         }
         const audioProbe = {
           starts: 0,

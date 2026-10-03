@@ -5,8 +5,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- Configurable count-in playback with accented strong beats, start/always modes, lead calibration, and score positioning before the first note.
+- SoundFont warm-up before playback, with muted preparation audio and background prewarming after a tune is loaded.
 
-
+### Fixed
+- Loop playback now preserves seamless selected-range cycles while safely restarting tunes that use header `P:` part orders.
+- Playback follows and scrolls the Score to the selected or count-in measure before the first note begins.
+- Playback preparation and diagnostics now handle delayed audio startup and exact fixture ranges more reliably.
 
 ## [1.11.4] - 2026-10-01
 ### Fixed

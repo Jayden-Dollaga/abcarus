@@ -1,12 +1,21 @@
+import { getCountInPlan } from "./count_in_model.js";
+
 function createPlaybackStartController({
   transport,
+  windowRef,
   selectionRuntime,
   getEditorView,
+  getEditorText,
+  getPlaybackCountInMeasures = () => 0,
+  getPlaybackCountInMode = () => "start",
+  getPlaybackCountInLeadMs = () => 80,
+  preparePlaybackStartView = () => {},
   getPlaybackRange,
   setPlaybackRange,
   clonePlaybackRange,
   getPlaybackSourceKey,
   preparePlayback,
+  warmupPlayback = async () => false,
   ensureSoundfontReady,
   stopPlaybackForRestart,
   stopPlaybackFromGuard,
@@ -30,6 +39,9 @@ function createPlaybackStartController({
   isFollowPlaybackEnabled,
   getDebugParts,
 } = {}) {
+  let backgroundWarmupPromise = null;
+  let lastBackgroundWarmupSourceKey = null;
+
   function playbackStartFailureMessage(error) {
     const message = error && error.message ? String(error.message) : String(error || "");
     if (
@@ -84,7 +96,6 @@ function createPlaybackStartController({
     }
 
     transport.markPreparedStart(start);
-
     if (getDebugParts()) {
       try {
         const getPartLetterAtSymbol = (sym) => {
@@ -174,7 +185,13 @@ function createPlaybackStartController({
     const useNativeLoop = Boolean(
       rangeForStart
       && rangeForStart.loop
-      && (rangeForStart.origin === "focus" || rangeForStart.origin === "selection" || rangeForStart.origin === "ab")
+      && !transport.lastPlaybackHasPartOrder
+      && (
+        rangeForStart.origin === "focus"
+        || rangeForStart.origin === "selection"
+        || rangeForStart.origin === "ab"
+        || rangeForStart.origin === "transport"
+      )
     );
     let playerStart = engineStart;
     if (useNativeLoop) {
@@ -239,6 +256,10 @@ function createPlaybackStartController({
       setSoundfontCaption();
       if (message) showToast(message, 2600);
     };
+    if (backgroundWarmupPromise) {
+      try { await backgroundWarmupPromise; } catch {}
+      if (startToken !== transport.playbackStartToken) return;
+    }
     let range = clonePlaybackRange(rangeOverride || getPlaybackRange());
     const max = editorView.state.doc.length;
     if (!Number.isFinite(range.startOffset) || range.startOffset < 0 || range.startOffset > max) {
@@ -408,19 +429,92 @@ function createPlaybackStartController({
       endSymbol: selectionMode ? null : resolvePlaybackEndSymbol(range, startSym),
       startSymbol: startSym,
     });
-    try {
-      startPlaybackFromPrepared(startSym.istart);
-    } catch (e) {
-      transport.lastPlaybackException = {
-        phase: "startPlaybackFromPrepared",
-        message: (e && e.message) ? String(e.message) : String(e),
-        stack: (e && e.stack) ? String(e.stack) : null,
-      };
-      stopPlaybackFromGuard(`Playback start failed: ${(e && e.message) ? e.message : String(e)}`);
-      showToast(playbackStartFailureMessage(e), 8000);
+    const startEditorOffset = typeof toEditorOffset === "function"
+      ? toEditorOffset(startSym.istart)
+      : null;
+    if (Number.isFinite(startEditorOffset)) {
+      try { preparePlaybackStartView(startEditorOffset); } catch {}
+    }
+    const startPrepared = () => {
+      if (startToken !== transport.playbackStartToken) return;
+      transport.playbackCountInTimer = null;
+      try {
+        startPlaybackFromPrepared(startSym.istart);
+      } catch (e) {
+        transport.lastPlaybackException = {
+          phase: "startPlaybackFromPrepared",
+          message: (e && e.message) ? String(e.message) : String(e),
+          stack: (e && e.stack) ? String(e.stack) : null,
+        };
+        stopPlaybackFromGuard(`Playback start failed: ${(e && e.message) ? e.message : String(e)}`);
+        showToast(playbackStartFailureMessage(e), 8000);
+        return;
+      }
+      transport.finishStartAttempt();
+    };
+    const countInAllowed = String(getPlaybackCountInMode()) === "always"
+      || Number(range.startOffset) === 0;
+    const countInPlan = range.skipCountIn || !countInAllowed
+      ? { count: 0, delayMs: 0, beatSeconds: 0, beatsPerMeasure: 0, hasMidiDrum: false }
+      : getCountInPlan({
+        measures: getPlaybackCountInMeasures(),
+        abcText: typeof getEditorText === "function" ? getEditorText() : "",
+        playbackState: transport.playbackState,
+        speed: transport.desiredPlayerSpeed,
+      });
+    if (countInPlan.delayMs > 0) {
+      const token = transport.playbackStartToken;
+      setStatus("Preparing audio...");
+      const warmed = await warmupPlayback(startSym);
+      if (token !== transport.playbackStartToken) return;
+      if (!warmed) {
+        // Warmup is an optimization, not a prerequisite for playback. If a
+        // large external SF2 cannot finish within the warmup window, skip the
+        // metronome and let the real playback request complete the load. This
+        // avoids a misleading count-in before an audio engine that is not ready.
+        setStatus("Loading instrument...");
+        startPrepared();
+        return;
+      }
+      const AudioContextCtor = windowRef && (windowRef.AudioContext || windowRef.webkitAudioContext);
+      let audioContext = null;
+      try { audioContext = AudioContextCtor ? new AudioContextCtor() : null; } catch {}
+      transport.playbackCountInAudioContext = audioContext;
+      const startAt = audioContext ? audioContext.currentTime + 0.03 : 0;
+      if (audioContext) {
+        const totalBeats = countInPlan.count * countInPlan.beatsPerMeasure;
+        for (let beat = 0; beat < totalBeats; beat += 1) {
+          const oscillator = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          const accent = beat % countInPlan.beatsPerMeasure === 0;
+          const when = startAt + beat * countInPlan.beatSeconds;
+          oscillator.type = countInPlan.hasMidiDrum ? "square" : "sine";
+          oscillator.frequency.value = accent ? 1320 : 880;
+          gain.gain.setValueAtTime(0.0001, when);
+          gain.gain.exponentialRampToValueAtTime(accent ? 0.16 : 0.09, when + 0.004);
+          gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.055);
+          oscillator.connect(gain);
+          gain.connect(audioContext.destination);
+          oscillator.start(when);
+          oscillator.stop(when + 0.07);
+          transport.playbackCountInAudioNodes.push(oscillator);
+        }
+      }
+      const leadMs = Math.max(0, Math.min(300, Math.round(Number(getPlaybackCountInLeadMs()) || 0)));
+      const playDelayMs = Math.max(0, countInPlan.delayMs - leadMs);
+      transport.playbackCountInTimer = setTimeout(() => {
+        if (token !== transport.playbackStartToken) return;
+        transport.playbackCountInTimer = null;
+        startPrepared();
+        setTimeout(() => {
+          if (token === transport.playbackStartToken) transport.cancelCountIn();
+        }, countInPlan.delayMs - playDelayMs + 120);
+      }, playDelayMs);
+      setStatus(`Count-in: ${countInPlan.count} bar${countInPlan.count === 1 ? "" : "s"}`);
+      updatePlayButton();
       return;
     }
-    transport.finishStartAttempt();
+    startPrepared();
   }
 
   async function startPlaybackAtIndex(startIdx) {
@@ -501,6 +595,42 @@ function createPlaybackStartController({
     await startPlaybackFromRange();
   }
 
+  function prewarmCurrentTune() {
+    if (backgroundWarmupPromise) return backgroundWarmupPromise;
+    if (
+      transport.isPlaying
+      || transport.isPaused
+      || transport.waitingForFirstNote
+      || transport.playbackStartArmed
+    ) return Promise.resolve(false);
+    const sourceKey = getPlaybackSourceKey();
+    if (!sourceKey) return Promise.resolve(false);
+    if (
+      sourceKey === lastBackgroundWarmupSourceKey
+      && transport.playbackState
+      && transport.player
+    ) return Promise.resolve(true);
+
+    const run = (async () => {
+      selectionRuntime.setSelectionMode(false);
+      selectionRuntime.clearScopedOptions();
+      await preparePlayback();
+      if (sourceKey !== getPlaybackSourceKey()) return false;
+      const state = transport.playbackState;
+      const start = state && state.startSymbol;
+      if (!start) return false;
+      const warmed = await warmupPlayback(start);
+      if (warmed && sourceKey === getPlaybackSourceKey()) {
+        lastBackgroundWarmupSourceKey = sourceKey;
+      }
+      return warmed;
+    })().catch(() => false).finally(() => {
+      if (backgroundWarmupPromise === run) backgroundWarmupPromise = null;
+    });
+    backgroundWarmupPromise = run;
+    return run;
+  }
+
   return {
     startPlaybackFromPrepared,
     resolvePlaybackEndSymbol,
@@ -508,6 +638,7 @@ function createPlaybackStartController({
     startPlaybackAtIndex,
     pausePlayback,
     startPlaybackAtMeasureOffset,
+    prewarmCurrentTune,
   };
 }
 

@@ -154,6 +154,7 @@ export function createPlaybackDomain({
     clearNoteOnElements: () => requireController("follow").clearPlaybackNoteOnEls(),
     cloneRange: (range) => requireController("transport").clonePlaybackRange(range),
     ensurePlayer: () => requireController("player").ensurePlayer(),
+    warmupPlayback: (startSymbol) => requireController("player").warmupPlayback(startSymbol),
     ensureSoundfontLoaded: () => {
       const controller = getSoundfont();
       return controller ? controller.ensureLoaded() : Promise.resolve();
@@ -334,14 +335,15 @@ export function createPlaybackDomain({
     maybeAutoScrollRenderToCursor: (element) => (
       requireController("autoScroll").maybeAutoScrollRenderToCursor(element)
     ),
-    maybeScrollRenderToNote: (element) => (
-      requireController("follow").maybeScrollRenderToNote(element)
+    maybeScrollRenderToNote: (element, options) => (
+      requireController("follow").maybeScrollRenderToNote(element, options)
     ),
     pause: () => requireController("start").pausePlayback(),
     playDrumPreview: (pitch, velocity) => (
       requireController("drumPreview").playDrumPreview(pitch, velocity)
     ),
     prepare: () => requireController("prepare").preparePlayback(),
+    prewarmCurrentTune: () => requireController("start").prewarmCurrentTune(),
     playAbLoop: () => requireController("abSelection").playAbLoop(),
     playSelectionOnce: () => requireController("abSelection").playSelectionOnce(),
     refreshAbOptionsUi: () => requireController("abSelection").refreshOptionsUi(),

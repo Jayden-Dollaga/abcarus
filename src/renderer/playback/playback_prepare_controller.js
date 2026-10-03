@@ -133,6 +133,7 @@ function createPlaybackPrepareController({
     const playbackPayloadOffset = playbackPayload.offset || 0;
     const selectionMode = selectionRuntime.isSelectionMode();
     transport.lastPlaybackHasParts = /\nP\s*:/.test(`\n${playbackPayloadText || ""}`) || /\[\s*P\s*:/i.test(playbackPayloadText || "");
+    transport.lastPlaybackHasPartOrder = /^\s*P\s*:/m.test(playbackPayloadText || "");
     if (Array.isArray(transport.playbackSanitizeWarnings) && transport.playbackSanitizeWarnings.length) {
       showToast("Playback may vary (ABC sanitized for stability).", 3600);
     }

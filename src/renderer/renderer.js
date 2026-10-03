@@ -2315,6 +2315,32 @@ playbackDomain.initialize({
     clearSvgPlayhead,
     clearSvgFollowBarHighlight,
     clearSvgFollowMeasureHighlight,
+    highlightSvgFollowBarAtEditorOffset: scoreHighlightController.highlightSvgFollowBarAtEditorOffset,
+    preparePlaybackStartView: (editorOffset) => {
+      const view = editorRuntime.getView();
+      if (!view || !Number.isFinite(editorOffset)) return;
+      const max = view.state.doc.length;
+      const position = Math.max(0, Math.min(editorOffset, max));
+      view.dispatch({
+        selection: { anchor: position, head: position },
+        scrollIntoView: true,
+      });
+      let scoreTarget = null;
+      try {
+        scoreTarget = scoreHighlightController.highlightSvgFollowBarAtEditorOffset(position);
+      } catch {}
+      if (!scoreTarget) return;
+      const revealScoreTarget = () => {
+        try {
+          playbackDomain.maybeScrollRenderToNote(scoreTarget, {
+            placement: "comfortable-center",
+            force: true,
+          });
+        } catch {}
+      };
+      revealScoreTarget();
+      try { window.requestAnimationFrame(revealScoreTarget); } catch {}
+    },
     clearNoteSelection,
     clearErrors,
     addError,
@@ -2939,10 +2965,17 @@ diagnosticsDomain.installDevUiSmoke({
   setPayloadModeSettingEnabled: (enabled) => {
     settingsSnapshot.patch({ payloadModeEnabled: Boolean(enabled) });
   },
+  patchSettings: (patch) => settingsSnapshot.patch(patch && typeof patch === "object" ? patch : {}),
   setRightPaneSize: (size) => layoutController.setRightPaneSizes(Number(size)),
   mapEditorOffsetToRenderIdx,
   getState: () => {
     const diagnostics = playbackDomain.getDiagnosticsSnapshot();
+    const playableEditorOffsets = diagnostics.playbackState && Array.isArray(diagnostics.playbackState.symbols)
+      ? diagnostics.playbackState.symbols
+        .map((entry) => entry && entry.symbol)
+        .filter((symbol) => symbol && !symbol.noplay && Number(symbol.dur) > 0 && Number.isFinite(symbol.istart))
+        .map((symbol) => Number(symbol.istart) - (Number(diagnostics.playbackIndexOffset) || 0))
+      : [];
     return {
       ...playbackDomain.getUiState(),
       playbackDiagnostics: {
@@ -2952,6 +2985,8 @@ diagnosticsDomain.installDevUiSmoke({
         lastPlaybackException: diagnostics.lastPlaybackException,
         lastStartPlaybackIdx: diagnostics.lastStartPlaybackIdx,
         playbackIndexOffset: diagnostics.playbackIndexOffset,
+        playbackFirstEditorOffset: playableEditorOffsets.length ? Math.min(...playableEditorOffsets) : null,
+        playbackLastEditorOffset: playableEditorOffsets.length ? Math.max(...playableEditorOffsets) : null,
       },
       selection: editorRuntime.getView() ? {
         from: editorRuntime.getView().state.selection.main.from,
@@ -4232,6 +4267,7 @@ settingsDomain = createSettingsDomain({
   actions: {
     centerRenderPaneOnCurrentAnchor,
     ensureSoundfontLoaded,
+    prewarmCurrentTune: playbackDomain.prewarmCurrentTune,
     exitPayloadMode: () => payloadModeFeature.exit(),
     logStartupPerf,
     markStartupSettingsApplied: () => statusController.markStartupSettingsApplied(),
@@ -4347,6 +4383,19 @@ function buildHeaderPrefixWithLayerSpans(entryHeader, includeCheckbars, tuneText
 }
 
 playbackDomain.start();
+
+let playbackPrewarmTimer = null;
+if ($out) {
+  $out.addEventListener("abcarus:score-rendered", () => {
+    if (playbackPrewarmTimer != null) clearTimeout(playbackPrewarmTimer);
+    const settings = settingsSnapshot.get() || {};
+    if ((Number(settings.playbackCountInMeasures) || 0) <= 0) return;
+    playbackPrewarmTimer = setTimeout(() => {
+      playbackPrewarmTimer = null;
+      playbackDomain.prewarmCurrentTune().catch(() => {});
+    }, 500);
+  });
+}
 
 diagnosticsDomain.runDevAutoscrollDemo({
   readFile,

@@ -15,6 +15,7 @@ function installDevUiSmokeHook({
   setPayloadTuneIdentity = () => {},
   dispatchAction = async () => {},
   setPayloadModeSettingEnabled = () => {},
+  patchSettings = () => {},
   setRightPaneSize = () => {},
   mapEditorOffsetToRenderIdx = (offset) => offset,
 } = {}) {
@@ -42,6 +43,7 @@ function installDevUiSmokeHook({
     },
     dispatchAction,
     setPayloadModeSettingEnabled,
+    patchSettings,
     setRightPaneSize,
     mapEditorOffsetToRenderIdx,
     snapshot: () => {

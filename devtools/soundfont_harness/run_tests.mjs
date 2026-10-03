@@ -159,11 +159,12 @@ const settingsRuntime = createSettingsRuntimeController({
     resetSoundfontCache: () => initialCalls.push("reset-cache"),
     resetPlaybackForSoundfontChange: () => initialCalls.push("reset-player"),
     ensureSoundfontLoaded: () => initialCalls.push("load"),
+    prewarmCurrentTune: () => initialCalls.push("prewarm"),
   },
 });
 await settingsRuntime.loadInitialSettings();
 await new Promise((resolve) => setTimeout(resolve, 0));
-assert.deepEqual(initialCalls, ["apply", "reset-cache", "reset-player", "load"]);
+assert.deepEqual(initialCalls, ["apply", "reset-cache", "reset-player", "load", "prewarm"]);
 
 const rendererHtml = await readFile("src/renderer/index.html", "utf8");
 assert.match(rendererHtml, /connect-src[^;]*\babcarus-sf2:/);

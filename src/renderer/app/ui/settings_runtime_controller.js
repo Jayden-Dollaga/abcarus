@@ -70,9 +70,11 @@ function createSettingsRuntimeController({
     if (prevSoundfont === getSoundfontName()) return;
     call("resetSoundfontCache");
     call("resetPlaybackForSoundfontChange");
-    Promise.resolve(call("ensureSoundfontLoaded")).catch(() => {
-      call("setSoundfontStatus", "Soundfont load failed", 5000);
-    });
+    Promise.resolve(call("ensureSoundfontLoaded"))
+      .then(() => call("prewarmCurrentTune"))
+      .catch(() => {
+        call("setSoundfontStatus", "Soundfont load failed", 5000);
+      });
   }
 
   async function loadInitialSettings() {

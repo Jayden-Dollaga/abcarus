@@ -120,10 +120,10 @@ function createPlaybackFollowController({
     }
   }
 
-  function maybeScrollRenderToNote(el, { placement = "nearest" } = {}) {
+  function maybeScrollRenderToNote(el, { placement = "nearest", force = false } = {}) {
     const renderPane = getRenderPane();
     if (!renderPane || !el) return;
-    if (transport.isPlaying || transport.isPaused || transport.waitingForFirstNote) {
+    if (!force && (transport.isPlaying || transport.isPaused || transport.waitingForFirstNote)) {
       maybeAutoScrollRenderToCursor(el);
       return;
     }

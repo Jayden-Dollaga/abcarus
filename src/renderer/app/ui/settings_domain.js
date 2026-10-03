@@ -142,6 +142,7 @@ function createSettingsDomain({
         applyLibraryPrefs: setLibraryPrefsFromSettings,
         applyMicrotonalSettings: setMicrotonalFromSettings,
         ensureSoundfontLoaded: actions.ensureSoundfontLoaded,
+        prewarmCurrentTune: actions.prewarmCurrentTune,
         exitPayloadMode: actions.exitPayloadMode,
         logStartupPerf: actions.logStartupPerf,
         markStartupSettingsApplied: actions.markStartupSettingsApplied,

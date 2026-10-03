@@ -237,7 +237,7 @@ function createScoreHighlightController({
         for (const el of lastSvgFollowBarEls) {
           try { el.classList.add("svg-follow-bar"); } catch {}
         }
-        return true;
+        return hits[0] || false;
       }
     }
     clearSvgFollowBarHighlight();

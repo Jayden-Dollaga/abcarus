@@ -6,7 +6,7 @@ function defaultPlaybackMeta() {
 
 function clonePlaybackRange(r) {
   if (!r || typeof r !== "object") {
-    return { startOffset: 0, endOffset: null, origin: "cursor", loop: false, suppressRepeats: null };
+    return { startOffset: 0, endOffset: null, origin: "cursor", loop: false, suppressRepeats: null, skipCountIn: false };
   }
   const range = {
     startOffset: Number(r.startOffset) || 0,
@@ -14,6 +14,7 @@ function clonePlaybackRange(r) {
     origin: r.origin || "cursor",
     loop: Boolean(r.loop),
     suppressRepeats: (typeof r.suppressRepeats === "boolean") ? Boolean(r.suppressRepeats) : null,
+    skipCountIn: Boolean(r.skipCountIn),
   };
   if (Number.isFinite(Number(r.loopGapMs))) {
     range.loopGapMs = Math.max(0, Math.min(5000, Math.round(Number(r.loopGapMs))));
@@ -80,12 +81,16 @@ function createPlaybackTransportState() {
     lastPlaybackTuneInfo: null,
     lastPlaybackOnIstart: null,
     lastPlaybackHasParts: false,
+    lastPlaybackHasPartOrder: false,
     lastPlaybackChordOnBarError: false,
     lastPlaybackMidiDrumVoiceCompatSeen: false,
     lastPlaybackMeterMismatchWarning: null,
     lastPlaybackRepeatShortBarWarning: null,
     lastPlaybackKeyOrderWarning: null,
     playbackStartToken: 0,
+    playbackCountInTimer: null,
+    playbackCountInAudioNodes: [],
+    playbackCountInAudioContext: null,
     lastPlaybackGuardMessage: "",
     lastPlaybackAbortMessage: "",
     lastPlaybackException: null,
@@ -115,7 +120,21 @@ function createPlaybackTransportState() {
 
   state.bumpStartToken = () => {
     state.playbackStartToken += 1;
+    state.cancelCountIn();
     return state.playbackStartToken;
+  };
+
+  state.cancelCountIn = () => {
+    if (state.playbackCountInTimer != null) clearTimeout(state.playbackCountInTimer);
+    state.playbackCountInTimer = null;
+    for (const node of state.playbackCountInAudioNodes) {
+      try { node.stop(); } catch {}
+    }
+    state.playbackCountInAudioNodes = [];
+    if (state.playbackCountInAudioContext && typeof state.playbackCountInAudioContext.close === "function") {
+      try { state.playbackCountInAudioContext.close(); } catch {}
+    }
+    state.playbackCountInAudioContext = null;
   };
 
   state.beginStartAttempt = () => {
@@ -244,6 +263,7 @@ function createPlaybackTransportState() {
         endOffset: (range.endOffset == null) ? null : Number(range.endOffset),
         origin: String(range.origin || "focus"),
         loop: true,
+        skipCountIn: true,
         ...(Number.isFinite(Number(range.loopGapMs))
           ? { loopGapMs: Math.max(0, Math.min(5000, Math.round(Number(range.loopGapMs)))) }
           : {}),

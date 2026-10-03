@@ -33,6 +33,9 @@ const { createPlaybackStartController } = await importBundledModule(
 const { createPlaybackFollowController } = await importBundledModule(
   "src/renderer/playback/playback_follow_controller.js",
 );
+const { createPlaybackPlayerController } = await importBundledModule(
+  "src/renderer/playback/playback_player_controller.js",
+);
 const { createFocusModeController } = await importBundledModule(
   "src/renderer/playback/focus_mode_controller.js",
 );
@@ -114,6 +117,88 @@ const {
 );
 
 {
+  const volumes = [];
+  const speeds = [];
+  const warmupEvents = [];
+  let plays = 0;
+  let stops = 0;
+  let warmupPlayArgs = null;
+  let playerVolume = 0.7;
+  let playerConfig = null;
+  const fakePlayer = {
+    play: (...args) => {
+      plays += 1;
+      warmupPlayArgs = args;
+      warmupEvents.push("play");
+      queueMicrotask(() => playerConfig.onend());
+    },
+    stop: () => {
+      stops += 1;
+      warmupEvents.push("stop");
+    },
+    set_sfu: () => {},
+    set_vol: (value) => {
+      if (value == null) return playerVolume;
+      playerVolume = value;
+      volumes.push(value);
+      warmupEvents.push(`volume:${value}`);
+      return playerVolume;
+    },
+    set_speed: (value) => { speeds.push(value); },
+  };
+  const sourceSymbol = {
+    istart: 25,
+    dur: 192,
+    ptim: 10,
+    time: 10,
+    v: 0,
+    p_v: { id: "1" },
+    notes: [{ midi: 60 }],
+    parts: "ABC",
+    part1: { p_s: [] },
+    ts_prev: { parts: "ABC" },
+    ts_next: {},
+  };
+  const playbackState = { symbols: [{ symbol: sourceSymbol }] };
+  const playerTransport = {
+    player: null,
+    playbackState,
+    desiredPlayerSpeed: 0.8,
+  };
+  const playerController = createPlaybackPlayerController({
+    windowRef: {
+      AbcPlay: (config) => {
+        playerConfig = config;
+        return fakePlayer;
+      },
+      sessionStorage: { setItem() {} },
+      setTimeout,
+      clearTimeout,
+    },
+    transport: playerTransport,
+    getSoundfontSource: () => "test.sf2",
+  });
+  const startSymbol = sourceSymbol;
+  assert.equal(await playerController.warmupPlayback(startSymbol), true);
+  assert.deepEqual(volumes, [0, 0.7], "audio warmup must remain silent and restore playback volume");
+  assert.deepEqual(
+    warmupEvents,
+    ["volume:0", "play", "stop", "volume:0.7"],
+    "the muted warmup channel must be stopped before normal volume is restored",
+  );
+  assert.deepEqual(speeds, [0.8], "audio warmup must not alter the requested tempo");
+  assert.equal(plays, 1);
+  assert.equal(stops, 1);
+  assert.notEqual(warmupPlayArgs[0], sourceSymbol, "warmup must use an isolated symbol clone");
+  assert.equal(warmupPlayArgs[0].ts_prev, null);
+  assert.equal(warmupPlayArgs[0].parts, undefined);
+  assert.equal(warmupPlayArgs[0].part1, undefined);
+  assert.equal(warmupPlayArgs[0].ts_next, warmupPlayArgs[1]);
+  assert.equal(await playerController.warmupPlayback(startSymbol), true);
+  assert.equal(plays, 1, "the same prepared playback state must only be warmed once");
+}
+
+{
   const renderPane = {
     scrollTop: 400,
     scrollLeft: 100,
@@ -137,6 +222,19 @@ const {
     getBoundingClientRect: () => ({ top: 80, bottom: 120, left: 500, right: 1100, width: 600, height: 40 }),
   }, { placement: "comfortable-center" });
   assert.equal(renderPane.scrollLeft, 700, "a wide off-screen measure should be centered within scroll bounds");
+
+  let guardedScrolls = 0;
+  const busyFollow = createPlaybackFollowController({
+    transport: { isPlaying: false, isPaused: false, waitingForFirstNote: true },
+    getRenderPane: () => renderPane,
+    maybeAutoScrollRenderToCursor: () => { guardedScrolls += 1; },
+  });
+  renderPane.scrollTop = 700;
+  busyFollow.maybeScrollRenderToNote({
+    getBoundingClientRect: () => ({ top: -600, bottom: -580, left: 100, right: 200, width: 100, height: 20 }),
+  }, { placement: "comfortable-center", force: true });
+  assert.equal(guardedScrolls, 0, "count-in positioning must bypass guarded playback auto-scroll");
+  assert.equal(renderPane.scrollTop, 10, "count-in positioning must reveal the requested score row immediately");
 }
 
 {
@@ -535,6 +633,27 @@ assert.equal(
   nativeTransport.playbackLoopGapMs = 500;
   nativeController.startPlaybackFromPrepared(128);
   assert.equal(calls[0][3], true, "legacy loop-gap settings must not disable seamless native looping");
+
+  calls.length = 0;
+  nativeTransport.playbackStartArmed = true;
+  nativeTransport.activePlaybackRange = {
+    startOffset: 0,
+    endOffset: null,
+    origin: "transport",
+    loop: true,
+  };
+  nativeController.startPlaybackFromPrepared(128);
+  assert.equal(calls[0][3], true, "whole-tune transport loops must use abc2svg native looping");
+
+  calls.length = 0;
+  nativeTransport.playbackStartArmed = true;
+  nativeTransport.lastPlaybackHasPartOrder = true;
+  nativeController.startPlaybackFromPrepared(128);
+  assert.equal(
+    calls[0][3],
+    false,
+    "tunes with P: part order must restart through ABCarus because abc2svg native loops retain stale part state",
+  );
 }
 
 const trace = [];

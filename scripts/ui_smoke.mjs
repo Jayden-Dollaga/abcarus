@@ -18,6 +18,34 @@ const env = { ...process.env };
 env.ABCARUS_DEV_UI_SMOKE = "1";
 env.ABCARUS_DEV_NO_MAXIMIZE = "1";
 if (args.has("--playback")) env.ABCARUS_DEV_PLAYBACK_SMOKE = "1";
+const playbackTuneArg = process.argv.slice(2).find((arg) => arg.startsWith("--playback-tune="));
+if (playbackTuneArg) {
+  const fixturePath = path.resolve(playbackTuneArg.slice("--playback-tune=".length));
+  const xArg = process.argv.slice(2).find((arg) => arg.startsWith("--playback-x="));
+  const xNumber = xArg ? xArg.slice("--playback-x=".length).trim() : "";
+  const source = readFileSync(fixturePath, "utf8");
+  const escapedX = xNumber.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const startMatch = xNumber
+    ? new RegExp(`^X:\\s*${escapedX}\\s*$`, "m").exec(source)
+    : /^X:\s*\d+\s*$/m.exec(source);
+  if (!startMatch) throw new Error(`Tune X:${xNumber || "?"} not found in ${fixturePath}`);
+  const start = startMatch.index;
+  const remainder = source.slice(start + startMatch[0].length);
+  const next = /^X:\s*\d+\s*$/m.exec(remainder);
+  const end = next ? start + startMatch[0].length + next.index : source.length;
+  env.ABCARUS_DEV_PLAYBACK_SMOKE = "1";
+  env.ABCARUS_DEV_PLAYBACK_FIXTURE = Buffer.from(source.slice(start, end), "utf8").toString("base64");
+}
+if (args.has("--loop-cycle")) {
+  env.ABCARUS_DEV_PLAYBACK_SMOKE = "1";
+  env.ABCARUS_DEV_LOOP_CYCLE_SMOKE = "1";
+}
+if (args.has("--loop-fixture-wrap")) env.ABCARUS_DEV_LOOP_FIXTURE_WRAP_SMOKE = "1";
+if (args.has("--loop-real-time")) env.ABCARUS_DEV_LOOP_REAL_TIME_SMOKE = "1";
+if (args.has("--count-in-scroll")) {
+  env.ABCARUS_DEV_PLAYBACK_SMOKE = "1";
+  env.ABCARUS_DEV_COUNT_IN_SCROLL_SMOKE = "1";
+}
 const tempUserData = mkdtempSync(path.join(os.tmpdir(), "abcarus-ui-smoke-"));
 env.ABCARUS_DEV_USER_DATA = tempUserData;
 if (args.has("--payload")) env.ABCARUS_DEV_PAYLOAD_SMOKE = "1";
