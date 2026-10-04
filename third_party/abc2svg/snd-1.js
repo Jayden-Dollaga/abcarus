@@ -669,8 +669,19 @@ p.pan.value=s.p_v.pan
 o.connect(p)
 p.connect(g)}else{o.connect(g)}
 g.connect(po.gain)
+// Give every note a very short release so the sample is not hard-cut at the
+// exact note boundary. This is intentionally tiny: it should remove the
+// discontinuity/click without noticeably changing note length.
+var release=.005,end=t+d
+if (g.gain.cancelAndHoldAtTime) {
+ g.gain.cancelAndHoldAtTime(end)
+} else {
+ g.gain.cancelScheduledValues(end)
+ g.gain.setValueAtTime(g.gain.value,end)
+}
+g.gain.linearRampToValueAtTime(0,end+release)
 o.start(t)
-o.stop(t+d)}
+o.stop(end+release)}
 function play_start(){if(po.stop){po.onend(repv)
 return}
 gain.connect(ac.destination)
